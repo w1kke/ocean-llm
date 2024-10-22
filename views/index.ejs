@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ocean LLM</title>
+    <link rel="stylesheet" href="/node_modules/bootstrap/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body class="bg-light">
+    <div class="container mt-5">
+        <h1 class="text-center mb-4">Ocean LLM</h1>
+        <button id="walletConnectBtn" class="btn btn-primary mb-3">Connect Wallet</button>
+        <div id="chatbox" class="bg-white p-3 rounded shadow">
+            <div id="messages" class="mb-3" style="height: 300px; overflow-y: auto;"></div>
+            <div class="input-group">
+                <input type="text" id="chatInput" class="form-control" placeholder="Type your message...">
+                <button id="sendBtn" class="btn btn-success">Send</button>
+            </div>
+        </div>
+    </div>
+    <script src="/node_modules/web3/dist/web3.min.js"></script>
+    <script src="/js/wallet.js"></script>
+    <script src="/js/chat.js"></script>
+</body>
+</html>
