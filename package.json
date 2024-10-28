@@ -12,8 +12,15 @@
     "@langchain/openai": "^0.3.11",
     "@oceanprotocol/lib": "^3.4.2",
     "bootstrap": "^5.3.3",
+<<<<<<< HEAD
     "dotenv": "^16.0.3",
     "ejs": "^3.1.8",
+=======
+    "crypto-js": "^4.2.0",
+    "dotenv": "^16.0.3",
+    "ejs": "^3.1.8",
+    "ether": "^0.0.9",
+>>>>>>> 80a8564 (update)
     "ethers": "^5.7.2",
     "express": "^4.18.2",
     "web3": "^1.8.0"
