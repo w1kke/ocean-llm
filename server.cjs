@@ -63,6 +63,52 @@ async function initializeOcean() {
     };
 }
 
+async function createDDO(nftAddress, metadata, oceanConfig) {
+    const currentTime = new Date().toISOString();
+    
+    return {
+        '@context': ['https://w3id.org/did/v1'],
+        id: `did:op:${nftAddress}`,
+        version: '4.1.0',
+        chainId: oceanConfig.chainId,
+        nftAddress: nftAddress,
+        metadata: {
+            created: currentTime,
+            updated: currentTime,
+            type: 'dataset',
+            name: metadata.nftName,
+            description: metadata.description,
+            author: metadata.author,
+            license: "https://market.oceanprotocol.com/terms",
+            links: ["https://oceanprotocol.com"],
+            additionalInformation: {
+                symbol: metadata.nftSymbol,
+                datatokenSymbol: metadata.datatokenSymbol,
+                datatokenName: metadata.datatokenName
+            }
+        },
+        services: [
+            {
+                id: 'marketplace',
+                type: 'metadata',
+                files: {
+                    contentType: 'application/json',
+                    structured: true
+                },
+                datatokenAddress: nftAddress,
+                serviceEndpoint: oceanConfig.providerUri,
+                timeout: 0
+            }
+        ],
+        nft: {
+            name: metadata.nftName,
+            symbol: metadata.nftSymbol,
+            owner: metadata.owner,
+            created: currentTime
+        }
+    };
+}
+
 app.post('/api/create-and-publish-nft', async (req, res) => {
     try {
         const { prompt, userAddress } = req.body;
@@ -74,16 +120,25 @@ app.post('/api/create-and-publish-nft', async (req, res) => {
         ];
         const aiResponse = await chat.invoke(messages);
         const metadata = JSON.parse(aiResponse.content.replace(/`/g, '').trim());
+        metadata.owner = userAddress;
 
         const oceanConfig = await initializeOcean();
         const provider = new ethers.providers.JsonRpcProvider(oceanConfig.nodeUri);
         const factory = new NftFactory(oceanConfig.nftFactoryAddress, provider);
 
+        // Create initial DDO for tokenURI
+        const initialDDO = await createDDO('0x0000000000000000000000000000000000000000', metadata, oceanConfig);
+        const encryptedDDO = await ProviderInstance.encrypt(
+            initialDDO,
+            oceanConfig.chainId,
+            oceanConfig.providerUri
+        );
+
         const nftParams = {
             name: metadata.nftName,
             symbol: metadata.nftSymbol,
             templateIndex: 1,
-            tokenURI: "",
+            tokenURI: encryptedDDO,
             transferable: true,
             owner: userAddress
         };
@@ -104,6 +159,7 @@ app.post('/api/create-and-publish-nft', async (req, res) => {
             allowedSwapper: userAddress
         };
 
+        // Create NFT with encrypted DDO as tokenURI
         const txData = await factory.contract.populateTransaction.createNftWithErc20WithDispenser(
             [
                 nftParams.name, nftParams.symbol, nftParams.templateIndex,
@@ -121,14 +177,18 @@ app.post('/api/create-and-publish-nft', async (req, res) => {
             ]
         );
 
-        res.json({ success: true, txData, metadata });
+        res.json({ 
+            success: true, 
+            txData, 
+            metadata,
+            ddo: initialDDO
+        });
 
     } catch (error) {
         console.error('Error during NFT creation:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
-
 
 app.post('/api/update-nft-metadata', async (req, res) => {
     try {
@@ -139,48 +199,27 @@ app.post('/api/update-nft-metadata', async (req, res) => {
         const provider = new ethers.providers.JsonRpcProvider(oceanConfig.nodeUri);
         const nft = new Nft(nftAddress, provider);
 
-        const ddo = {
-            '@context': 'https://w3id.org/did/v1',
-            id: `did:op:${nftAddress}`,
-            version: '4.1.0',
-            chainId: oceanConfig.chainId,
-            nftAddress,
-            metadata: {
-                ...metadata,
-                datatokenAddress: nftAddress,
-            },
-            services: [
-                {
-                    id: 'access',
-                    type: 'access',
-                    description: 'Download Service',
-                    files: 'encryptedFiles',
-                    datatokenAddress: nftAddress,
-                    serviceEndpoint: oceanConfig.providerUri,
-                    timeout: 0
-                }
-            ]
-        };
-
+        const ddo = await createDDO(nftAddress, metadata, oceanConfig);
         const encryptedDDO = await ProviderInstance.encrypt(
             ddo,
             oceanConfig.chainId,
             oceanConfig.providerUri
         );
 
-        await nft.setMetadata(
-            nftAddress,
-            userAddress,
-            1,
+        // Update metadata on-chain
+        const metadataTx = await nft.setMetadata(
             oceanConfig.providerUri,
-            '0x123',
-            '0x02',
             encryptedDDO,
-            ddo.id,
-            []
+            userAddress
         );
+        await metadataTx.wait();
 
-        res.json({ success: true, message: 'Metadata updated successfully', ddo });
+        res.json({ 
+            success: true, 
+            message: 'Metadata updated successfully', 
+            ddo,
+            transactionHash: metadataTx.hash 
+        });
     } catch (error) {
         console.error('Error updating metadata:', error);
         res.status(500).json({ success: false, error: error.message });
