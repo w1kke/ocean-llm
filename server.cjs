@@ -8,10 +8,35 @@ const ethers = require('ethers');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const chat = new ChatOpenAI({
-    openAIApiKey: process.env.OPENAI_API_KEY,
-    temperature: 0.7
-});
+// Initialize chat based on available API keys
+function initializeChat() {
+    const config = {
+        temperature: 0.7
+    };
+
+    if (process.env.OPENAI_API_KEY) {
+        return new ChatOpenAI({
+            openAIApiKey: process.env.OPENAI_API_KEY,
+            ...config
+        });
+    } else if (process.env.OPENROUTER_API_KEY) {
+        return new ChatOpenAI({
+            openAIApiKey: process.env.OPENROUTER_API_KEY,
+            configuration: {
+                baseURL: "https://openrouter.ai/api/v1",
+                defaultHeaders: {
+                    "HTTP-Referer": process.env.OPENROUTER_REFERER || "http://localhost:3000",
+                    "X-Title": process.env.OPENROUTER_TITLE || "Ocean LLM App"
+                }
+            },
+            ...config
+        });
+    } else {
+        throw new Error('No API key found. Please provide either OPENAI_API_KEY or OPENROUTER_API_KEY in your environment variables.');
+    }
+}
+
+const chat = initializeChat();
 
 app.use(express.static('public'));
 app.use(express.json());
