@@ -38,58 +38,73 @@ document.addEventListener('DOMContentLoaded', function () {
             alert('Please enter a description');
             return;
         }
-
+    
         try {
             nftResult.innerHTML = `<div class="alert alert-info">Creating and publishing NFT...</div>`;
-
+    
+            // Step 1: Fetch metadata and transaction data from the backend
             const response = await fetch('/api/create-and-publish-nft', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt, userAddress })
             });
-
+    
             const data = await response.json();
             if (!data.success) throw new Error(data.error);
-
+    
             const signedTx = await web3.eth.sendTransaction({
                 from: userAddress,
                 to: data.txData.to,
                 data: data.txData.data
             });
-
+    
             const txReceipt = await waitForTransactionReceipt(signedTx.transactionHash);
             const nftLog = txReceipt.logs.find(log => log.topics[0] === web3.utils.sha3("Transfer(address,address,uint256)"));
             if (!nftLog) throw new Error('NFT creation event not found in transaction logs.');
-
+    
             const nftAddress = `0x${nftLog.address.slice(-40)}`;
             nftResult.innerHTML = `<div class="alert alert-success">Transaction Hash: ${txReceipt.transactionHash}</div>`;
-
+    
             const chainId = await web3.eth.getChainId();
-
-            // Step 2: Fetch populated `setMetadata` transaction from the backend
+    
+            // Step 2: Call backend to populate setMetadata transaction
             const updateResponse = await fetch('/api/encrypt-metadata', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     nftAddress,
                     metadata: { ...data.metadata, created: new Date().toISOString() },
-                    chainId
+                    chainId,
+                    publisherAddress: userAddress // Pass user address as publisher
                 })
             });
-
+    
             const updateData = await updateResponse.json();
             if (!updateData.success) throw new Error(updateData.error);
-
-            // Step 3: User signs the populated `setMetadata` transaction
+    
+            // Verify populatedTransaction structure before sending
+            const populatedTx = updateData.transaction;
+            if (!populatedTx || !populatedTx.to || !populatedTx.data) {
+                throw new Error('Invalid transaction data from backend.');
+            }
+    
+            // Step 3: User signs the populated setMetadata transaction
             console.log('Signing setMetadata transaction...');
-            const signedSetMetadataTx = await web3.eth.sendTransaction(updateData.populatedTransaction);
-
+            const signedSetMetadataTx = await web3.eth.sendTransaction({
+                from: userAddress,
+                to: populatedTx.to,
+                data: populatedTx.data
+                // Omitting gas so it gets auto-estimated by web3
+            });
+    
             nftResult.innerHTML += `<div class="alert alert-success">Metadata updated successfully. TX: ${signedSetMetadataTx.transactionHash}</div>`;
         } catch (error) {
             nftResult.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
             console.error('Error during NFT creation and metadata update:', error);
         }
     }
+    
+    
 
     async function waitForTransactionReceipt(hash) {
         let receipt = null;

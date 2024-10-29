@@ -2,10 +2,10 @@
   "name": "ocean-llm",
   "version": "1.0.0",
   "description": "Interact with Ocean Protocol via LLM",
-  "main": "server.js",
+  "main": "server.cjs",
   "type": "commonjs",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.cjs"
   },
   "dependencies": {
     "@langchain/core": "^0.3.0",

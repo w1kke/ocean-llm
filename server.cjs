@@ -25,6 +25,38 @@ function debug(...args) {
     if (DEBUG) console.log('[DEBUG]', ...args);
 }
 
+
+
+const nftAbi = [
+    {
+        "inputs": [
+            { "internalType": "uint8", "name": "_metaDataState", "type": "uint8" },
+            { "internalType": "string", "name": "_metaDataDecryptorUrl", "type": "string" },
+            { "internalType": "string", "name": "_metaDataDecryptorAddress", "type": "string" },
+            { "internalType": "bytes", "name": "flags", "type": "bytes" },
+            { "internalType": "bytes", "name": "data", "type": "bytes" },
+            { "internalType": "bytes32", "name": "_metaDataHash", "type": "bytes32" },
+            { 
+              "internalType": "tuple[]", 
+              "name": "additionalParams", 
+              "type": "tuple[]",
+              "components": [
+                { "internalType": "address", "name": "param1", "type": "address" },
+                { "internalType": "uint8", "name": "param2", "type": "uint8" },
+                { "internalType": "bytes32", "name": "param3", "type": "bytes32" },
+                { "internalType": "bytes32", "name": "param4", "type": "bytes32" }
+              ]
+            }
+        ],
+        "name": "setMetaData",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    }
+];
+
+
+
 async function initializeOcean() {
     debug('Starting Ocean Protocol initialization...');
     const configHelper = new ConfigHelper();
@@ -39,6 +71,7 @@ async function initializeOcean() {
         chainId: baseConfig.chainId
     };
 }
+
 
 function calculateDID(nftAddress, chainId) {
     const checksum = CryptoJS.SHA256(nftAddress + chainId.toString(10)).toString(CryptoJS.enc.Hex);
@@ -113,9 +146,11 @@ app.post('/api/create-and-publish-nft', async (req, res) => {
 
 app.post('/api/encrypt-metadata', async (req, res) => {
     try {
-        const { nftAddress, metadata, chainId } = req.body;
+        const { nftAddress, metadata, chainId, publisherAddress } = req.body;
 
-        if (!nftAddress || !metadata || !chainId) throw new Error('Missing required parameters');
+        if (!nftAddress || !metadata || !chainId || !publisherAddress) {
+            throw new Error('Missing required parameters');
+        }
 
         const oceanConfig = await initializeOcean();
         const did = calculateDID(nftAddress, chainId);
@@ -153,31 +188,43 @@ app.post('/api/encrypt-metadata', async (req, res) => {
         // Validate the DDO with Aquarius
         const aquarius = new Aquarius(oceanConfig.metadataCacheUri);
         const isAssetValid = await aquarius.validate(ddo);
-        if (!isAssetValid.valid) throw new Error(`DDO Validation Failed: ${JSON.stringify(isAssetValid)}`);
+        if (!isAssetValid.valid) {
+            throw new Error(`DDO Validation Failed: ${JSON.stringify(isAssetValid)}`);
+        }
 
+        // Encrypt the DDO using ProviderInstance
         const encryptedDDO = await ProviderInstance.encrypt(
             ddo,
             oceanConfig.chainId,
             oceanConfig.providerUri
         );
 
-        // Populate `setMetadata` transaction using the Nft instance
-        const nftContract = new Nft(oceanConfig.nodeUri);
-        const populatedTransaction = await nftContract.populateTransaction.setMetadata(
-            nftAddress,
-            publisherAddress,         
-            0,                        
-            oceanConfig.providerUri,  
-            '0x123',                  
-            '0x02',                   
-            encryptedDDO,             
-            validationHash,           
-            []                        
-        );
-        
+        // Calculate metadata hash for _metaDataHash
+        const metadataHash = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(JSON.stringify(ddo.metadata)));
+
+        // Use ethers to encode the setMetaData transaction
+        const nftInterface = new ethers.utils.Interface(nftAbi);
+        const txData = nftInterface.encodeFunctionData("setMetaData", [
+            0,                                               // _metaDataState (uint8)
+            "https://v4.provider.oceanprotocol.com",         // _metaDataDecryptorUrl (string)
+            "0x123",                                         // _metaDataDecryptorAddress (address)
+            '0x02',                                          // flags (bytes)
+            encryptedDDO,                                    // data (bytes, encrypted DDO)
+            metadataHash,                                    // _metaDataHash (bytes32)
+            []                                               // additionalParams as empty array if not needed
+        ]);
+
+        // Construct the transaction object to return
+        const transaction = {
+            to: nftAddress,
+            from: publisherAddress,
+            data: txData,
+            chainId: oceanConfig.chainId
+        };
+
         res.json({
             success: true,
-            populatedTransaction,
+            transaction,   // Send back transaction for frontend signature
             encryptedDDO,
             validationHash: isAssetValid.hash
         });
@@ -186,7 +233,6 @@ app.post('/api/encrypt-metadata', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
-
 
 
 app.get('/', (req, res) => {
