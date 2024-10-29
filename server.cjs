@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const { ChatOpenAI } = require('@langchain/openai');
 const { HumanMessage, SystemMessage } = require('@langchain/core/messages');
-const { NftFactory, ConfigHelper, ProviderInstance, Aquarius, Nft } = require('@oceanprotocol/lib');
+const { NftFactory, ConfigHelper, ProviderInstance, Aquarius, getHash } = require('@oceanprotocol/lib');
 const CryptoJS = require('crypto-js');
 const ethers = require('ethers');
 
@@ -36,16 +36,16 @@ const nftAbi = [
             { "internalType": "bytes", "name": "flags", "type": "bytes" },
             { "internalType": "bytes", "name": "data", "type": "bytes" },
             { "internalType": "bytes32", "name": "_metaDataHash", "type": "bytes32" },
-            { 
-              "internalType": "tuple[]", 
-              "name": "additionalParams", 
-              "type": "tuple[]",
-              "components": [
-                { "internalType": "address", "name": "param1", "type": "address" },
-                { "internalType": "uint8", "name": "param2", "type": "uint8" },
-                { "internalType": "bytes32", "name": "param3", "type": "bytes32" },
-                { "internalType": "bytes32", "name": "param4", "type": "bytes32" }
-              ]
+            {
+                "internalType": "tuple[]",
+                "name": "additionalParams",
+                "type": "tuple[]",
+                "components": [
+                    { "internalType": "address", "name": "param1", "type": "address" },
+                    { "internalType": "uint8", "name": "param2", "type": "uint8" },
+                    { "internalType": "bytes32", "name": "param3", "type": "bytes32" },
+                    { "internalType": "bytes32", "name": "param4", "type": "bytes32" }
+                ]
             }
         ],
         "name": "setMetaData",
@@ -102,9 +102,9 @@ app.post('/api/create-and-publish-nft', async (req, res) => {
             transferable: true,
             owner: userAddress
         };
-        
+
         const datatokenParams = {
-            templateIndex: 2,
+            templateIndex: 1,
             strings: [metadata.datatokenName, metadata.datatokenSymbol],
             addresses: [userAddress, userAddress, userAddress, oceanConfig.oceanTokenAddress],
             uints: [ethers.utils.parseUnits('100000', 18).toString(), '0'],
@@ -155,6 +155,8 @@ app.post('/api/encrypt-metadata', async (req, res) => {
         const oceanConfig = await initializeOcean();
         const did = calculateDID(nftAddress, chainId);
 
+        console.log(did)
+
         const ddo = {
             '@context': ['https://w3id.org/did/v1', 'https://w3id.org/ocean/metadata'],
             id: did,
@@ -185,6 +187,8 @@ app.post('/api/encrypt-metadata', async (req, res) => {
             ]
         };
 
+
+
         // Validate the DDO with Aquarius
         const aquarius = new Aquarius(oceanConfig.metadataCacheUri);
         const isAssetValid = await aquarius.validate(ddo);
@@ -199,10 +203,13 @@ app.post('/api/encrypt-metadata', async (req, res) => {
             oceanConfig.providerUri
         );
 
-        // Calculate metadata hash for _metaDataHash
-        const metadataHash = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(JSON.stringify(ddo.metadata)));
 
-        // Use ethers to encode the setMetaData transaction
+        const rawHash = getHash(JSON.stringify(ddo));
+        const metadataHash = rawHash.startsWith('0x') ? rawHash : `0x${rawHash}`;
+
+        console.log("Formatted Metadata Hash:", metadataHash); // For debugging
+
+        // Continue with transaction setup
         const nftInterface = new ethers.utils.Interface(nftAbi);
         const txData = nftInterface.encodeFunctionData("setMetaData", [
             0,                                               // _metaDataState (uint8)
@@ -213,6 +220,8 @@ app.post('/api/encrypt-metadata', async (req, res) => {
             metadataHash,                                    // _metaDataHash (bytes32)
             []                                               // additionalParams as empty array if not needed
         ]);
+
+
 
         // Construct the transaction object to return
         const transaction = {
