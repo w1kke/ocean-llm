@@ -1,11 +1,15 @@
 require('dotenv').config();
+require('blob-polyfill');
 const express = require('express');
 const { ChatOpenAI } = require('@langchain/openai');
 const { HumanMessage, SystemMessage } = require('@langchain/core/messages');
 const { NftFactory, ConfigHelper, ProviderInstance, Aquarius, getHash } = require('@oceanprotocol/lib');
 const CryptoJS = require('crypto-js');
 const ethers = require('ethers');
-
+const fileUpload = require('express-fileupload');
+const { Buffer } = require('buffer');
+const fetch = require('node-fetch');
+const FormData = require('form-data');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -17,6 +21,9 @@ const chat = new ChatOpenAI({
 
 app.use(express.static('public'));
 app.use(express.json());
+app.use(fileUpload({
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max file size
+}));
 app.set('view engine', 'ejs');
 app.set('views', './views');
 
@@ -24,8 +31,6 @@ const DEBUG = true;
 function debug(...args) {
     if (DEBUG) console.log('[DEBUG]', ...args);
 }
-
-
 
 const nftAbi = [
     {
@@ -55,7 +60,46 @@ const nftAbi = [
     }
 ];
 
+// File upload endpoint
+app.post('/api/upload', async (req, res) => {
+    try {
+        if (!req.files || !req.files.file) {
+            return res.status(400).json({ success: false, error: 'No file uploaded' });
+        }
 
+        const file = req.files.file;
+        const formData = new FormData();
+        formData.append('file', file.data, file.name);
+
+        const projectId = process.env.INFURA_PROJECT_ID;
+        const projectSecret = process.env.INFURA_PROJECT_SECRET;
+        const auth = 'Basic ' + Buffer.from(projectId + ':' + projectSecret).toString('base64');
+
+        const response = await fetch('https://ipfs.infura.io:5001/api/v0/add', {
+            method: 'POST',
+            headers: {
+                'Authorization': auth
+            },
+            body: formData
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const ipfsUrl = `https://ipfs.io/ipfs/${data.Hash}`;
+
+        res.json({
+            success: true,
+            cid: data.Hash,
+            ipfsUrl
+        });
+    } catch (error) {
+        console.error('Error uploading to IPFS:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 async function initializeOcean() {
     debug('Starting Ocean Protocol initialization...');
@@ -72,7 +116,6 @@ async function initializeOcean() {
     };
 }
 
-
 function calculateDID(nftAddress, chainId) {
     const checksum = CryptoJS.SHA256(nftAddress + chainId.toString(10)).toString(CryptoJS.enc.Hex);
     return `did:op:${checksum}`;
@@ -80,7 +123,7 @@ function calculateDID(nftAddress, chainId) {
 
 app.post('/api/create-and-publish-nft', async (req, res) => {
     try {
-        const { prompt, userAddress } = req.body;
+        const { prompt, userAddress, ipfsUrl } = req.body;
         if (!prompt || !userAddress) throw new Error('Missing required parameters: prompt and userAddress');
 
         const messages = [
@@ -90,9 +133,15 @@ app.post('/api/create-and-publish-nft', async (req, res) => {
         const aiResponse = await chat.invoke(messages);
         const metadata = JSON.parse(aiResponse.content.replace(/`/g, '').trim());
 
+        if (ipfsUrl) {
+            metadata.assetUrl = ipfsUrl;
+        }
+
         const oceanConfig = await initializeOcean();
         const provider = new ethers.providers.JsonRpcProvider(oceanConfig.nodeUri);
         const factory = new NftFactory(oceanConfig.nftFactoryAddress, provider);
+
+        const checksummedUserAddress = ethers.utils.getAddress(userAddress);
 
         const nftParams = {
             name: metadata.nftName,
@@ -100,13 +149,13 @@ app.post('/api/create-and-publish-nft', async (req, res) => {
             templateIndex: 1,
             tokenURI: "",
             transferable: true,
-            owner: userAddress
+            owner: checksummedUserAddress
         };
 
         const datatokenParams = {
             templateIndex: 1,
             strings: [metadata.datatokenName, metadata.datatokenSymbol],
-            addresses: [userAddress, userAddress, userAddress, oceanConfig.oceanTokenAddress],
+            addresses: [checksummedUserAddress, checksummedUserAddress, checksummedUserAddress, oceanConfig.oceanTokenAddress],
             uints: [ethers.utils.parseUnits('100000', 18).toString(), '0'],
             bytess: []
         };
@@ -116,7 +165,7 @@ app.post('/api/create-and-publish-nft', async (req, res) => {
             maxTokens: ethers.utils.parseUnits('1000', 18).toString(),
             maxBalance: ethers.utils.parseUnits('100', 18).toString(),
             withMint: true,
-            allowedSwapper: userAddress
+            allowedSwapper: checksummedUserAddress
         };
 
         const txData = await factory.contract.populateTransaction.createNftWithErc20WithDispenser(
@@ -136,7 +185,25 @@ app.post('/api/create-and-publish-nft', async (req, res) => {
             ]
         );
 
-        res.json({ success: true, txData, metadata });
+        // Estimate gas for the first transaction
+        const gasEstimate = await provider.estimateGas({
+            to: oceanConfig.nftFactoryAddress,
+            data: txData.data,
+            from: checksummedUserAddress
+        });
+
+        // Convert the gasLimit to hex
+        const gasLimitHex = '0x' + gasEstimate.mul(12).div(10).toHexString().slice(2);
+
+        const formattedTxData = {
+            to: oceanConfig.nftFactoryAddress,
+            data: txData.data,
+            gasLimit: gasLimitHex
+        };
+
+        debug('Formatted transaction data:', formattedTxData);
+
+        res.json({ success: true, txData: formattedTxData, metadata });
 
     } catch (error) {
         console.error('Error during NFT creation:', error);
@@ -152,17 +219,19 @@ app.post('/api/encrypt-metadata', async (req, res) => {
             throw new Error('Missing required parameters');
         }
 
-        const oceanConfig = await initializeOcean();
-        const did = calculateDID(nftAddress, chainId);
+        const checksummedNftAddress = ethers.utils.getAddress(nftAddress);
+        const checksummedPublisherAddress = ethers.utils.getAddress(publisherAddress);
 
-        console.log(did)
+        const oceanConfig = await initializeOcean();
+        const provider = new ethers.providers.JsonRpcProvider(oceanConfig.nodeUri);
+        const did = calculateDID(checksummedNftAddress, chainId);
 
         const ddo = {
             '@context': ['https://w3id.org/did/v1', 'https://w3id.org/ocean/metadata'],
             id: did,
             version: '4.1.0',
             chainId: oceanConfig.chainId,
-            nftAddress,
+            nftAddress: checksummedNftAddress,
             metadata: {
                 ...metadata,
                 type: 'dataset',
@@ -172,7 +241,8 @@ app.post('/api/encrypt-metadata', async (req, res) => {
                 license: metadata.license || "No license",
                 created: metadata.created || new Date().toISOString(),
                 updated: new Date().toISOString(),
-                datatokenAddress: nftAddress
+                datatokenAddress: checksummedNftAddress,
+                links: metadata.assetUrl ? [metadata.assetUrl] : []
             },
             services: [
                 {
@@ -180,60 +250,62 @@ app.post('/api/encrypt-metadata', async (req, res) => {
                     type: 'access',
                     description: 'Download Service',
                     files: '',
-                    datatokenAddress: nftAddress,
+                    datatokenAddress: checksummedNftAddress,
                     serviceEndpoint: oceanConfig.providerUri,
                     timeout: 0
                 }
             ]
         };
 
-
-
-        // Validate the DDO with Aquarius
         const aquarius = new Aquarius(oceanConfig.metadataCacheUri);
         const isAssetValid = await aquarius.validate(ddo);
         if (!isAssetValid.valid) {
             throw new Error(`DDO Validation Failed: ${JSON.stringify(isAssetValid)}`);
         }
 
-        // Encrypt the DDO using ProviderInstance
         const encryptedDDO = await ProviderInstance.encrypt(
             ddo,
             oceanConfig.chainId,
             oceanConfig.providerUri
         );
 
-
         const rawHash = getHash(JSON.stringify(ddo));
         const metadataHash = rawHash.startsWith('0x') ? rawHash : `0x${rawHash}`;
-
-        console.log("Formatted Metadata Hash:", metadataHash); // For debugging
 
         // Continue with transaction setup
         const nftInterface = new ethers.utils.Interface(nftAbi);
         const txData = nftInterface.encodeFunctionData("setMetaData", [
             0,                                               // _metaDataState (uint8)
-            "https://v4.provider.oceanprotocol.com",         // _metaDataDecryptorUrl (string)
-            "0x123",                                         // _metaDataDecryptorAddress (address)
+            oceanConfig.providerUri,                         // _metaDataDecryptorUrl (string)
+            checksummedPublisherAddress,                     // _metaDataDecryptorAddress (string)
             '0x02',                                          // flags (bytes)
             encryptedDDO,                                    // data (bytes, encrypted DDO)
             metadataHash,                                    // _metaDataHash (bytes32)
             []                                               // additionalParams as empty array if not needed
         ]);
 
+        // Estimate gas for the second transaction
+        const gasEstimate = await provider.estimateGas({
+            to: checksummedNftAddress,
+            data: txData,
+            from: checksummedPublisherAddress
+        });
 
+        // Convert the gasLimit to hex
+        const gasLimitHex = '0x' + gasEstimate.mul(12).div(10).toHexString().slice(2);
 
         // Construct the transaction object to return
         const transaction = {
-            to: nftAddress,
-            from: publisherAddress,
+            to: checksummedNftAddress,
             data: txData,
-            chainId: oceanConfig.chainId
+            gasLimit: gasLimitHex
         };
+
+        debug('Formatted metadata transaction:', transaction);
 
         res.json({
             success: true,
-            transaction,   // Send back transaction for frontend signature
+            transaction,
             encryptedDDO,
             validationHash: isAssetValid.hash
         });
@@ -242,7 +314,6 @@ app.post('/api/encrypt-metadata', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
-
 
 app.get('/', (req, res) => {
     res.render('index');

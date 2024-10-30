@@ -17,8 +17,116 @@ To install Ocean LLM, follow these steps:
    ```
    npm install
    ```
-4. Start the server
+
+## Configuration
+
+1. Create a `.env` file based on `.env.example`
+2. Set up your OpenAI API key and Ocean Protocol configuration
+
+### Setting up IPFS with Infura
+
+The application uses Infura's IPFS service for decentralized file storage. To set it up:
+
+1. Create an account at [Infura](https://infura.io)
+2. Create a new IPFS project
+3. Get your Project ID and API Secret Key
+4. Add them to your `.env` file:
+   ```
+   INFURA_PROJECT_ID=your_project_id
+   INFURA_PROJECT_SECRET=your_project_secret
+   ```
+
+### Environment Variables
+
+Make sure your `.env` file includes:
+
+```
+# OpenAI
+OPENAI_API_KEY=your_openai_key
+
+# Ocean Protocol
+OCEAN_NETWORK_URL=https://eth-sepolia.g.alchemy.com/v2/your_key
+PROVIDER_URL=https://v4.provider.sepolis.oceanprotocol.com
+AQUARIUS_URL=https://v4.aquarius.oceanprotocol.com
+
+# Infura IPFS
+INFURA_PROJECT_ID=your_infura_project_id
+INFURA_PROJECT_SECRET=your_infura_project_secret
+```
+
+## Running the Application
+
+1. Start the server
    ```
    npm start
    ```
-5. Open your browser and navigate to http://localhost:3000
+2. Open your browser and navigate to http://localhost:3000
+
+## Features
+
+- Create AI-generated NFT metadata
+- Upload files to IPFS via Infura
+- Mint DataNFTs on Ocean Protocol
+- Automatic metadata encryption and on-chain storage
+
+## Usage
+
+1. Connect your Web3 wallet (MetaMask recommended)
+2. Upload a file using the file upload section
+3. Enter your NFT description
+4. Click "Create NFT"
+
+The application will:
+- Upload your file to IPFS through Infura
+- Generate NFT metadata using AI
+- Create a DataNFT with the file's IPFS URL
+- Encrypt and store the metadata on-chain
+
+## Transaction Requirements
+
+The application requires ETH for two transactions:
+1. NFT Creation: 0.001 ETH
+2. Metadata Encryption: 0.001 ETH
+
+Make sure your wallet has sufficient ETH (at least 0.003 ETH recommended) to cover:
+- Transaction values (0.002 ETH total)
+- Gas fees
+- Buffer for potential retries
+
+## File Upload Process
+
+When you upload a file:
+1. The file is sent directly to IPFS through Infura's API
+2. An IPFS hash (CID) is generated
+3. An IPFS URL is created in the format: `https://ipfs.io/ipfs/{hash}`
+4. The URL is included in the NFT metadata
+
+## Troubleshooting
+
+If you encounter issues:
+
+1. Check your `.env` file has all required variables
+2. Ensure your Infura credentials are correct
+3. Check the console for any error messages
+4. Make sure you're connected to the correct network in MetaMask
+5. Verify you have enough ETH for transaction values and gas fees
+
+For IPFS specific issues:
+- Verify your Infura project is active
+- Check if the IPFS service is enabled in your Infura project
+- Test your credentials using the Infura API directly
+- Ensure your file size is within limits (50MB max)
+
+For transaction issues:
+- Ensure your wallet has sufficient ETH (0.3 ETH recommended)
+- Check that you're on the Sepolia network
+- Wait for each transaction to be confirmed before proceeding
+- Monitor transaction status in MetaMask
+
+## Security Notes
+
+- Your Infura credentials are sensitive - never commit them to version control
+- The .env file is listed in .gitignore to prevent accidental exposure
+- Files are uploaded directly to IPFS without storing them on the server
+- All IPFS URLs are public and permanent - be careful what you upload
+- Transaction values are required for contract interaction - ensure sufficient funds

@@ -22,12 +22,29 @@
             </div>
             <div class="chat-container">
                 <div id="messages" class="messages"></div>
+                <div class="file-upload-section">
+                    <div class="file-upload-header">Upload File for NFT</div>
+                    <input type="file" id="fileInput" class="file-input">
+                    <div id="uploadStatus" class="upload-status"></div>
+                </div>
                 <div class="input-group">
                     <input type="text" id="chatInput" placeholder="Describe the NFT you want to create...">
                     <button id="createNftBtn" class="btn" disabled>Create NFT</button>
                 </div>
             </div>
-            <div id="nftResult" class="status-bar"></div>
+            <div class="status-container">
+                <div id="nftResult" class="status-bar"></div>
+                <div class="transaction-status">
+                    <div id="tx1Status" class="tx-status">
+                        <span class="tx-label">NFT Creation:</span>
+                        <span class="tx-state"></span>
+                    </div>
+                    <div id="tx2Status" class="tx-status">
+                        <span class="tx-label">Metadata Encryption:</span>
+                        <span class="tx-state"></span>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/web3@1.8.0/dist/web3.min.js"></script>

@@ -1,183 +1,244 @@
+let userAddress = null;
 let web3;
-let userAddress;
+let ipfsUrl = null;
 
-document.addEventListener('DOMContentLoaded', function () {
-    const createNftBtn = document.getElementById('createNftBtn');
-    const walletConnectBtn = document.getElementById('walletConnectBtn');
-    const nftResult = document.getElementById('nftResult');
-    const chatInput = document.getElementById('chatInput');
-    const messages = document.getElementById('messages');
+function updateTransactionStatus(id, status, message) {
+    const statusElement = document.querySelector(`#${id} .tx-state`);
+    statusElement.textContent = message;
+    statusElement.className = `tx-state ${status}`;
+}
 
-    // Add title bar button functionality
-    document.querySelectorAll('.title-bar-controls button').forEach(button => {
-        button.addEventListener('mousedown', function() {
-            this.style.borderColor = 'var(--win-darker) var(--win-lighter) var(--win-lighter) var(--win-darker)';
-        });
-        button.addEventListener('mouseup', function() {
-            this.style.borderColor = 'var(--win-lighter) var(--win-darker) var(--win-darker) var(--win-lighter)';
-        });
-        button.addEventListener('mouseleave', function() {
-            this.style.borderColor = 'var(--win-lighter) var(--win-darker) var(--win-darker) var(--win-lighter)';
-        });
-    });
-
-    function showSystemAlert(message) {
-        const alertBox = document.createElement('div');
-        alertBox.className = 'system-alert';
-        alertBox.innerHTML = `
-            <div class="title-bar">
-                <div class="title-bar-text">Ocean AI NFT Creator</div>
-                <div class="title-bar-controls">
-                    <button aria-label="Close"></button>
-                </div>
-            </div>
-            <div class="window-body">
-                <p>${message}</p>
-                <div class="button-row">
-                    <button class="btn">OK</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(alertBox);
-
-        const closeBtn = alertBox.querySelector('button');
-        closeBtn.onclick = () => alertBox.remove();
-
-        // Center the alert box
-        alertBox.style.position = 'fixed';
-        alertBox.style.top = '50%';
-        alertBox.style.left = '50%';
-        alertBox.style.transform = 'translate(-50%, -50%)';
-    }
-
-    function addMessage(text, type = 'info') {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${type}`;
-        messageDiv.textContent = text;
-        messages.appendChild(messageDiv);
-        messages.scrollTop = messages.scrollHeight;
-    }
-
-    walletConnectBtn.onclick = connectWallet;
-    createNftBtn.onclick = createAndPublishNFT;
-
-    // Enter key in input triggers create button if enabled
-    chatInput.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter' && !createNftBtn.disabled) {
-            createAndPublishNFT();
-        }
-    });
-
-    async function connectWallet() {
-        if (typeof window.ethereum !== 'undefined') {
-            try {
-                await window.ethereum.request({ method: 'eth_requestAccounts' });
-                web3 = new Web3(window.ethereum);
-                const accounts = await web3.eth.getAccounts();
-                userAddress = accounts[0];
-                walletConnectBtn.textContent = `Connected: ${userAddress.substring(0, 6)}...${userAddress.slice(-4)}`;
-                createNftBtn.disabled = false;
-                addMessage('Wallet connected successfully', 'success');
-            } catch (error) {
-                console.error('Error connecting to MetaMask:', error);
-                showSystemAlert('Please ensure MetaMask is installed and configured.');
-                addMessage('Failed to connect wallet', 'error');
-            }
-        } else {
-            showSystemAlert('MetaMask is required for this feature.');
-            addMessage('MetaMask not detected', 'error');
-        }
-    }
-
-    async function createAndPublishNFT() {
-        if (!userAddress) {
-            showSystemAlert('Please connect your wallet');
-            return;
-        }
-        const prompt = chatInput.value.trim();
-        if (!prompt) {
-            showSystemAlert('Please enter a description');
-            return;
-        }
-    
+async function connectWallet() {
+    if (typeof window.ethereum !== 'undefined') {
         try {
-            addMessage(`Creating NFT: "${prompt}"`, 'info');
-            nftResult.innerHTML = `<div class="alert alert-info">Creating and publishing NFT...</div>`;
-    
-            // Step 1: Fetch metadata and transaction data from the backend
-            const response = await fetch('/api/create-and-publish-nft', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt, userAddress })
+            const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+            userAddress = accounts[0];
+            web3 = new Web3(window.ethereum);
+            
+            document.getElementById('walletConnectBtn').textContent = `Connected: ${userAddress.slice(0, 6)}...${userAddress.slice(-4)}`;
+            document.getElementById('createNftBtn').disabled = false;
+            
+            // Handle account changes
+            window.ethereum.on('accountsChanged', function (accounts) {
+                if (accounts.length === 0) {
+                    userAddress = null;
+                    document.getElementById('walletConnectBtn').textContent = 'Connect Wallet';
+                    document.getElementById('createNftBtn').disabled = true;
+                } else {
+                    userAddress = accounts[0];
+                    document.getElementById('walletConnectBtn').textContent = `Connected: ${userAddress.slice(0, 6)}...${userAddress.slice(-4)}`;
+                    document.getElementById('createNftBtn').disabled = false;
+                }
             });
+        } catch (error) {
+            console.error('Error connecting to wallet:', error);
+            alert('Failed to connect wallet: ' + error.message);
+        }
+    } else {
+        alert('Please install MetaMask to use this application');
+    }
+}
+
+async function handleFileUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const uploadStatus = document.getElementById('uploadStatus');
+    uploadStatus.textContent = 'Uploading to IPFS...';
+    uploadStatus.className = 'upload-status';
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const response = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            ipfsUrl = data.ipfsUrl;
+            uploadStatus.textContent = `File uploaded successfully! IPFS URL: ${data.ipfsUrl}`;
+            uploadStatus.className = 'upload-status success';
+        } else {
+            throw new Error(data.error || 'Upload failed');
+        }
+    } catch (error) {
+        console.error('Error uploading file:', error);
+        uploadStatus.textContent = 'Error uploading file: ' + error.message;
+        uploadStatus.className = 'upload-status error';
+        ipfsUrl = null;
+    }
+}
+
+function addMessage(content, isUser = false) {
+    const messagesDiv = document.getElementById('messages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${isUser ? 'user-message' : 'ai-message'}`;
+    messageDiv.textContent = content;
+    messagesDiv.appendChild(messageDiv);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+
+async function waitForTransaction(txHash, statusId) {
+    updateTransactionStatus(statusId, 'pending', 'Waiting for confirmation...');
+    let confirmations = 0;
     
-            const data = await response.json();
-            if (!data.success) throw new Error(data.error);
+    while (confirmations < 1) {
+        try {
+            const receipt = await web3.eth.getTransactionReceipt(txHash);
+            if (receipt) {
+                if (receipt.status) {
+                    updateTransactionStatus(statusId, 'success', 'Confirmed!');
+                    return receipt;
+                } else {
+                    updateTransactionStatus(statusId, 'error', 'Failed');
+                    throw new Error('Transaction failed');
+                }
+            }
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before checking again
+        } catch (error) {
+            updateTransactionStatus(statusId, 'error', 'Error: ' + error.message);
+            throw error;
+        }
+    }
+}
+
+async function createNft() {
+    if (!userAddress) {
+        alert('Please connect your wallet first');
+        return;
+    }
+
+    const input = document.getElementById('chatInput');
+    const prompt = input.value.trim();
     
-            addMessage('Please confirm the transaction in MetaMask', 'info');
-            const signedTx = await web3.eth.sendTransaction({
+    if (!prompt) {
+        alert('Please enter a description for your NFT');
+        return;
+    }
+
+    // Reset transaction statuses
+    updateTransactionStatus('tx1Status', 'waiting', 'Waiting to start...');
+    updateTransactionStatus('tx2Status', 'waiting', 'Waiting to start...');
+
+    addMessage(prompt, true);
+    document.getElementById('createNftBtn').disabled = true;
+    document.getElementById('nftResult').textContent = 'Creating NFT...';
+
+    try {
+        // First API call to create NFT
+        const createResponse = await fetch('/api/create-and-publish-nft', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                prompt,
+                userAddress,
+                ipfsUrl // Include IPFS URL if a file was uploaded
+            })
+        });
+
+        const createData = await createResponse.json();
+        if (!createData.success) {
+            throw new Error(createData.error || 'Failed to create NFT');
+        }
+
+        addMessage(JSON.stringify(createData.metadata, null, 2));
+
+        // Sign and send the first transaction
+        try {
+            // Convert hex string to number if it's a hex string
+            const gasLimit = createData.txData.gasLimit;
+            const gasLimitValue = typeof gasLimit === 'string' && gasLimit.startsWith('0x') 
+                ? parseInt(gasLimit, 16)
+                : Number(gasLimit);
+
+            // Prepare first transaction
+            const txToSend = {
+                to: createData.txData.to,
                 from: userAddress,
-                to: data.txData.to,
-                data: data.txData.data
-            });
-    
-            addMessage('Transaction submitted, waiting for confirmation...', 'info');
-            const txReceipt = await waitForTransactionReceipt(signedTx.transactionHash);
-            const nftLog = txReceipt.logs.find(log => log.topics[0] === web3.utils.sha3("Transfer(address,address,uint256)"));
-            if (!nftLog) throw new Error('NFT creation event not found in transaction logs.');
-    
-            const nftAddress = `0x${nftLog.address.slice(-40)}`;
-            nftResult.innerHTML = `<div class="alert alert-success">Transaction Hash: ${txReceipt.transactionHash}</div>`;
-            addMessage('NFT created successfully', 'success');
-    
+                data: createData.txData.data,
+                gas: web3.utils.numberToHex(gasLimitValue)
+            };
+
+            updateTransactionStatus('tx1Status', 'pending', 'Waiting for approval...');
+            console.log('Sending first transaction:', txToSend);
+            const tx = await web3.eth.sendTransaction(txToSend);
+            console.log('NFT Creation Transaction:', tx);
+
+            // Wait for the first transaction to be mined
+            const receipt = await waitForTransaction(tx.transactionHash, 'tx1Status');
+            const nftAddress = receipt.logs[0].address; // The first log contains the NFT address
+
+            document.getElementById('nftResult').textContent = 'Preparing metadata encryption...';
+
+            // Second API call to encrypt metadata
             const chainId = await web3.eth.getChainId();
-    
-            // Step 2: Call backend to populate setMetadata transaction
-            addMessage('Updating metadata...', 'info');
-            const updateResponse = await fetch('/api/encrypt-metadata', {
+            const encryptResponse = await fetch('/api/encrypt-metadata', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json'
+                },
                 body: JSON.stringify({
                     nftAddress,
-                    metadata: { ...data.metadata, created: new Date().toISOString() },
+                    metadata: createData.metadata,
                     chainId,
                     publisherAddress: userAddress
                 })
             });
-    
-            const updateData = await updateResponse.json();
-            if (!updateData.success) throw new Error(updateData.error);
-    
-            const populatedTx = updateData.transaction;
-            if (!populatedTx || !populatedTx.to || !populatedTx.data) {
-                throw new Error('Invalid transaction data from backend.');
-            }
-    
-            addMessage('Please confirm the metadata transaction', 'info');
-            const signedSetMetadataTx = await web3.eth.sendTransaction({
-                from: userAddress,
-                to: populatedTx.to,
-                data: populatedTx.data
-            });
-    
-            addMessage('Metadata updated successfully', 'success');
-            nftResult.innerHTML += `<div class="alert alert-success">Metadata updated successfully. TX: ${signedSetMetadataTx.transactionHash}</div>`;
-            
-            // Clear input after successful creation
-            chatInput.value = '';
-        } catch (error) {
-            addMessage(`Error: ${error.message}`, 'error');
-            nftResult.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
-            console.error('Error during NFT creation and metadata update:', error);
-        }
-    }
 
-    async function waitForTransactionReceipt(hash) {
-        let receipt = null;
-        while (!receipt) {
-            receipt = await web3.eth.getTransactionReceipt(hash);
-            if (!receipt) await new Promise(resolve => setTimeout(resolve, 3000));
+            const encryptData = await encryptResponse.json();
+            if (!encryptData.success) {
+                throw new Error(encryptData.error || 'Failed to encrypt metadata');
+            }
+
+            // Convert hex string to number if it's a hex string
+            const gasLimit2 = encryptData.transaction.gasLimit;
+            const gasLimitValue2 = typeof gasLimit2 === 'string' && gasLimit2.startsWith('0x')
+                ? parseInt(gasLimit2, 16)
+                : Number(gasLimit2);
+
+            // Prepare second transaction
+            const tx2ToSend = {
+                to: encryptData.transaction.to,
+                from: userAddress,
+                data: encryptData.transaction.data,
+                gas: web3.utils.numberToHex(gasLimitValue2)
+            };
+
+            updateTransactionStatus('tx2Status', 'pending', 'Waiting for approval...');
+            console.log('Sending second transaction:', tx2ToSend);
+            const tx2 = await web3.eth.sendTransaction(tx2ToSend);
+            console.log('Metadata Transaction:', tx2);
+
+            // Wait for the second transaction to be mined
+            await waitForTransaction(tx2.transactionHash, 'tx2Status');
+
+            document.getElementById('nftResult').textContent = `NFT created successfully! Address: ${nftAddress}`;
+        } catch (error) {
+            console.error('Transaction error:', error);
+            document.getElementById('nftResult').textContent = 'Transaction failed: ' + error.message;
+            throw error;
         }
-        return receipt;
+    } catch (error) {
+        console.error('Error:', error);
+        document.getElementById('nftResult').textContent = 'Error: ' + error.message;
+    } finally {
+        document.getElementById('createNftBtn').disabled = false;
+        input.value = '';
+    }
+}
+
+// Event Listeners
+document.getElementById('walletConnectBtn').addEventListener('click', connectWallet);
+document.getElementById('createNftBtn').addEventListener('click', createNft);
+document.getElementById('fileInput').addEventListener('change', handleFileUpload);
+document.getElementById('chatInput').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        createNft();
     }
 });
