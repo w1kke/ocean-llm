@@ -213,18 +213,22 @@ app.post('/api/create-and-publish-nft', async (req, res) => {
 
 app.post('/api/encrypt-metadata', async (req, res) => {
     try {
-        const { nftAddress, metadata, chainId, publisherAddress } = req.body;
+        const { nftAddress, datatokenAddress, metadata, chainId, publisherAddress } = req.body;
 
         if (!nftAddress || !metadata || !chainId || !publisherAddress) {
             throw new Error('Missing required parameters');
         }
 
+        console.log(nftAddress);
         const checksummedNftAddress = ethers.utils.getAddress(nftAddress);
+        console.log(checksummedNftAddress);
         const checksummedPublisherAddress = ethers.utils.getAddress(publisherAddress);
 
         const oceanConfig = await initializeOcean();
         const provider = new ethers.providers.JsonRpcProvider(oceanConfig.nodeUri);
         const did = calculateDID(checksummedNftAddress, chainId);
+
+        console.log(did);
 
         const ddo = {
             '@context': ['https://w3id.org/did/v1', 'https://w3id.org/ocean/metadata'],
@@ -241,7 +245,7 @@ app.post('/api/encrypt-metadata', async (req, res) => {
                 license: metadata.license || "No license",
                 created: metadata.created || new Date().toISOString(),
                 updated: new Date().toISOString(),
-                datatokenAddress: checksummedNftAddress,
+                datatokenAddress: datatokenAddress,
                 links: metadata.assetUrl ? [metadata.assetUrl] : []
             },
             services: [

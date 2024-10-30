@@ -103,6 +103,7 @@ async function waitForTransaction(txHash, statusId) {
             throw error;
         }
     }
+
 }
 
 async function createNft() {
@@ -171,7 +172,9 @@ async function createNft() {
 
             // Wait for the first transaction to be mined
             const receipt = await waitForTransaction(tx.transactionHash, 'tx1Status');
-            const nftAddress = receipt.logs[0].address; // The first log contains the NFT address
+            console.log('receipt logs:', receipt.logs);
+            const nftAddress = receipt.logs[2].address; // The third log contains the NFT address
+            const datatokenAddress = receipt.logs[7].address;
 
             document.getElementById('nftResult').textContent = 'Preparing metadata encryption...';
 
@@ -184,6 +187,7 @@ async function createNft() {
                 },
                 body: JSON.stringify({
                     nftAddress,
+                    datatokenAddress,
                     metadata: createData.metadata,
                     chainId,
                     publisherAddress: userAddress
