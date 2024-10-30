@@ -254,7 +254,7 @@ app.post('/api/encrypt-metadata', async (req, res) => {
                     type: 'access',
                     description: 'Download Service',
                     files: '',
-                    datatokenAddress: checksummedNftAddress,
+                    datatokenAddress: datatokenAddress,
                     serviceEndpoint: oceanConfig.providerUri,
                     timeout: 0
                 }
