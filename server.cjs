@@ -219,16 +219,25 @@ app.post('/api/encrypt-metadata', async (req, res) => {
             throw new Error('Missing required parameters');
         }
 
-        console.log(nftAddress);
         const checksummedNftAddress = ethers.utils.getAddress(nftAddress);
-        console.log(checksummedNftAddress);
         const checksummedPublisherAddress = ethers.utils.getAddress(publisherAddress);
 
         const oceanConfig = await initializeOcean();
         const provider = new ethers.providers.JsonRpcProvider(oceanConfig.nodeUri);
         const did = calculateDID(checksummedNftAddress, chainId);
 
-        console.log(did);
+        // Prepare DDO metadata with IPFS file encryption
+        const ipfsFile = { type: "ipfs", hash: metadata.assetUrl.split('/').pop() };
+        const encryptedFiles = await ProviderInstance.encrypt(
+            [ipfsFile],
+            oceanConfig.chainId,
+            oceanConfig.providerUri
+        );
+
+        console.log(encryptedFiles)
+        console.log(checksummedNftAddress) 
+        console.log(datatokenAddress)
+
 
         const ddo = {
             '@context': ['https://w3id.org/did/v1', 'https://w3id.org/ocean/metadata'],
@@ -246,27 +255,32 @@ app.post('/api/encrypt-metadata', async (req, res) => {
                 created: metadata.created || new Date().toISOString(),
                 updated: new Date().toISOString(),
                 datatokenAddress: datatokenAddress,
-                links: metadata.assetUrl ? [metadata.assetUrl] : []
+                links: metadata.assetUrl ? [metadata.assetUrl] : [],
+                tags: metadata.tags || [],
+                additionalInformation: metadata.additionalInformation || {}
             },
             services: [
                 {
-                    id: 'access',
+                    id: 'downloadService',
                     type: 'access',
                     description: 'Download Service',
-                    files: '',
+                    files: encryptedFiles,  // Encrypted IPFS file
                     datatokenAddress: datatokenAddress,
                     serviceEndpoint: oceanConfig.providerUri,
                     timeout: 0
                 }
             ]
         };
+        
 
+        // Validate the DDO with Aquarius
         const aquarius = new Aquarius(oceanConfig.metadataCacheUri);
         const isAssetValid = await aquarius.validate(ddo);
         if (!isAssetValid.valid) {
             throw new Error(`DDO Validation Failed: ${JSON.stringify(isAssetValid)}`);
         }
 
+        // Encrypt the full DDO for Ocean Protocol
         const encryptedDDO = await ProviderInstance.encrypt(
             ddo,
             oceanConfig.chainId,
@@ -276,7 +290,7 @@ app.post('/api/encrypt-metadata', async (req, res) => {
         const rawHash = getHash(JSON.stringify(ddo));
         const metadataHash = rawHash.startsWith('0x') ? rawHash : `0x${rawHash}`;
 
-        // Continue with transaction setup
+        // Set up transaction for setMetaData
         const nftInterface = new ethers.utils.Interface(nftAbi);
         const txData = nftInterface.encodeFunctionData("setMetaData", [
             0,                                               // _metaDataState (uint8)
@@ -288,24 +302,22 @@ app.post('/api/encrypt-metadata', async (req, res) => {
             []                                               // additionalParams as empty array if not needed
         ]);
 
-        // Estimate gas for the second transaction
+        // Estimate gas for the transaction
         const gasEstimate = await provider.estimateGas({
             to: checksummedNftAddress,
             data: txData,
             from: checksummedPublisherAddress
         });
 
-        // Convert the gasLimit to hex
+        // Convert gas limit to hex
         const gasLimitHex = '0x' + gasEstimate.mul(12).div(10).toHexString().slice(2);
 
-        // Construct the transaction object to return
+        // Construct transaction
         const transaction = {
             to: checksummedNftAddress,
             data: txData,
             gasLimit: gasLimitHex
         };
-
-        debug('Formatted metadata transaction:', transaction);
 
         res.json({
             success: true,
@@ -318,6 +330,7 @@ app.post('/api/encrypt-metadata', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
 
 app.get('/', (req, res) => {
     res.render('index');
