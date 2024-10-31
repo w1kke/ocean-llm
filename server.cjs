@@ -60,6 +60,96 @@ const nftAbi = [
     }
 ];
 
+async function initializeOcean() {
+    debug('Starting Ocean Protocol initialization...');
+    const configHelper = new ConfigHelper();
+    const baseConfig = configHelper.getConfig('sepolia');
+
+    return {
+        ...baseConfig,
+        nodeUri: process.env.OCEAN_NETWORK_URL,
+        providerUri: process.env.PROVIDER_URL,
+        metadataCacheUri: process.env.AQUARIUS_URL,
+        nftFactoryAddress: baseConfig.nftFactoryAddress,
+        chainId: baseConfig.chainId
+    };
+}
+
+function calculateDID(nftAddress, chainId) {
+    const checksum = CryptoJS.SHA256(nftAddress + chainId.toString(10)).toString(CryptoJS.enc.Hex);
+    return `did:op:${checksum}`;
+}
+
+async function generateMetadata(prompt) {
+    const messages = [
+        new SystemMessage(`You are an AI that creates detailed NFT metadata. Create engaging and creative metadata that matches the user's concept.
+        Respond in JSON format with:
+        {
+            "nftName": "Creative and catchy name",
+            "nftSymbol": "3-5 letter symbol",
+            "datatokenName": "Descriptive datatoken name",
+            "datatokenSymbol": "3-5 letter symbol",
+            "description": "Detailed, engaging description that captures the NFT's essence",
+            "author": "Generated author name",
+            "tags": ["array", "of", "relevant", "descriptive", "tags"],
+            "category": "Primary category of the NFT",
+            "imagePrompt": "Detailed prompt for DALL-E to generate a preview image"
+        }`),
+        new HumanMessage(`Create detailed NFT metadata for this concept: ${prompt}`)
+    ];
+    
+    const aiResponse = await chat.invoke(messages);
+    return JSON.parse(aiResponse.content.replace(/`/g, '').trim());
+}
+
+async function generateAndUploadPreviewImage(imagePrompt) {
+    // Generate preview image using DALL-E
+    const imageResponse = await fetch('https://api.openai.com/v1/images/generations', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+        },
+        body: JSON.stringify({
+            prompt: imagePrompt,
+            n: 1,
+            size: "1024x1024",
+            response_format: "b64_json"
+        })
+    });
+
+    const imageData = await imageResponse.json();
+    const imageBuffer = Buffer.from(imageData.data[0].b64_json, 'base64');
+    return await uploadToIPFS(imageBuffer, 'preview.png');
+}
+
+
+async function uploadToIPFS(fileData, fileName) {
+    const formData = new FormData();
+    formData.append('file', fileData, fileName);
+
+    const projectId = process.env.INFURA_PROJECT_ID;
+    const projectSecret = process.env.INFURA_PROJECT_SECRET;
+    const auth = 'Basic ' + Buffer.from(projectId + ':' + projectSecret).toString('base64');
+
+    const response = await fetch('https://ipfs.infura.io:5001/api/v0/add', {
+        method: 'POST',
+        headers: {
+            'Authorization': auth
+        },
+        body: formData
+    });
+
+    if (!response.ok) {
+        throw new Error(`IPFS upload failed with status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return `https://ipfs.io/ipfs/${data.Hash}`;
+}
+
+
+
 app.get('/api/user-assets/:address/:chainId', async (req, res) => {
     try {
         const { address, chainId } = req.params;
@@ -134,46 +224,25 @@ app.post('/api/upload', async (req, res) => {
     }
 });
 
-async function initializeOcean() {
-    debug('Starting Ocean Protocol initialization...');
-    const configHelper = new ConfigHelper();
-    const baseConfig = configHelper.getConfig('sepolia');
 
-    return {
-        ...baseConfig,
-        nodeUri: process.env.OCEAN_NETWORK_URL,
-        providerUri: process.env.PROVIDER_URL,
-        metadataCacheUri: process.env.AQUARIUS_URL,
-        nftFactoryAddress: baseConfig.nftFactoryAddress,
-        chainId: baseConfig.chainId
-    };
-}
-
-function calculateDID(nftAddress, chainId) {
-    const checksum = CryptoJS.SHA256(nftAddress + chainId.toString(10)).toString(CryptoJS.enc.Hex);
-    return `did:op:${checksum}`;
-}
 
 app.post('/api/create-and-publish-nft', async (req, res) => {
+    const { prompt, userAddress, ipfsUrl } = req.body;
+    
     try {
-        const { prompt, userAddress, ipfsUrl } = req.body;
-        if (!prompt || !userAddress) throw new Error('Missing required parameters: prompt and userAddress');
-
-        const messages = [
-            new SystemMessage(`You are an AI that creates NFT metadata. Respond in JSON format with nftName, nftSymbol, datatokenName, datatokenSymbol, description, author.`),
-            new HumanMessage(`Create NFT metadata for: ${prompt}`)
-        ];
-        const aiResponse = await chat.invoke(messages);
-        const metadata = JSON.parse(aiResponse.content.replace(/`/g, '').trim());
-
+        const metadata = await generateMetadata(prompt);
+        
+        const previewImageUrl = await generateAndUploadPreviewImage(metadata.imagePrompt);
+        
+        metadata.previewImageUrl = previewImageUrl;
         if (ipfsUrl) {
             metadata.assetUrl = ipfsUrl;
         }
 
+        // Ocean Protocol NFT creation setup
         const oceanConfig = await initializeOcean();
         const provider = new ethers.providers.JsonRpcProvider(oceanConfig.nodeUri);
         const factory = new NftFactory(oceanConfig.nftFactoryAddress, provider);
-
         const checksummedUserAddress = ethers.utils.getAddress(userAddress);
 
         const nftParams = {
@@ -288,7 +357,7 @@ app.post('/api/encrypt-metadata', async (req, res) => {
                 created: metadata.created || new Date().toISOString(),
                 updated: new Date().toISOString(),
                 datatokenAddress: datatokenAddress,
-                links: metadata.assetUrl ? [metadata.assetUrl] : [],
+                links: metadata.previewImageUrl ? [metadata.previewImageUrl] : [],
                 tags: metadata.tags || [],
                 additionalInformation: metadata.additionalInformation || {}
             },
