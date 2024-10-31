@@ -60,12 +60,10 @@ const nftAbi = [
     }
 ];
 
-// Add this new route to fetch user assets
-app.get('/api/user-assets/:address', async (req, res) => {
+app.get('/api/user-assets/:address/:chainId', async (req, res) => {
     try {
-        const { address } = req.params;
+        const { address, chainId } = req.params;
         
-        // Fetch assets from Aquarius with sorting
         const response = await fetch('https://v4.aquarius.oceanprotocol.com/api/aquarius/assets/query', {
             method: 'POST',
             headers: {
@@ -75,7 +73,8 @@ app.get('/api/user-assets/:address', async (req, res) => {
                 query: {
                     bool: {
                         must: [
-                            { match: { "nft.owner": address } }
+                            { match: { "nft.owner": address } },
+                            { match: { "chainId": parseInt(chainId) } }
                         ]
                     }
                 },

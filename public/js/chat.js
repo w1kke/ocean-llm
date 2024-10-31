@@ -13,12 +13,15 @@ async function fetchAndDisplayAssets() {
     if (!userAddress) return;
     
     try {
-        const response = await fetch(`/api/user-assets/${userAddress}`);
+        // Get current chain ID
+        const chainId = await web3.eth.getChainId();
+        
+        const response = await fetch(`/api/user-assets/${userAddress}/${chainId}`);
         const data = await response.json();
         
         if (data.success && data.assets.length > 0) {
             const assetsContainer = document.getElementById('userAssets');
-            assetsContainer.innerHTML = ''; // Clear existing assets
+            assetsContainer.innerHTML = '';
             
             data.assets.forEach(asset => {
                 const assetData = asset._source;
@@ -62,11 +65,10 @@ async function fetchAndDisplayAssets() {
                 assetsContainer.appendChild(card);
             });
         } else {
-            // If no assets, show a message
             const assetsContainer = document.getElementById('userAssets');
             assetsContainer.innerHTML = `
                 <div class="no-assets-message">
-                    No NFTs found for this wallet. Create your first NFT above!
+                    No NFTs found for this wallet on the current network. Create your first NFT above!
                 </div>
             `;
         }
@@ -74,6 +76,7 @@ async function fetchAndDisplayAssets() {
         console.error('Error fetching assets:', error);
     }
 }
+
 
 async function connectWallet() {
     if (typeof window.ethereum !== 'undefined') {
