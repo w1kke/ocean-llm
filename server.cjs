@@ -60,6 +60,40 @@ const nftAbi = [
     }
 ];
 
+// Add this new route to fetch user assets
+app.get('/api/user-assets/:address', async (req, res) => {
+    try {
+        const { address } = req.params;
+        
+        // Fetch assets from Aquarius with sorting
+        const response = await fetch('https://v4.aquarius.oceanprotocol.com/api/aquarius/assets/query', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                query: {
+                    bool: {
+                        must: [
+                            { match: { "nft.owner": address } }
+                        ]
+                    }
+                },
+                sort: [
+                    { "metadata.created": { "order": "desc" } }
+                ],
+                size: 100
+            })
+        });
+
+        const data = await response.json();
+        res.json({ success: true, assets: data.hits.hits });
+    } catch (error) {
+        console.error('Error fetching user assets:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // File upload endpoint
 app.post('/api/upload', async (req, res) => {
     try {
@@ -234,7 +268,7 @@ app.post('/api/encrypt-metadata', async (req, res) => {
             oceanConfig.providerUri
         );
 
-        console.log(encryptedFiles)
+
         console.log(checksummedNftAddress) 
         console.log(datatokenAddress)
 
@@ -264,7 +298,7 @@ app.post('/api/encrypt-metadata', async (req, res) => {
                     id: 'downloadService',
                     type: 'access',
                     description: 'Download Service',
-                    files: encryptedFiles,  // Encrypted IPFS file
+                    files: encryptedFiles,
                     datatokenAddress: datatokenAddress,
                     serviceEndpoint: oceanConfig.providerUri,
                     timeout: 0

@@ -1,11 +1,78 @@
 let userAddress = null;
 let web3;
 let ipfsUrl = null;
+let assetsUpdateInterval = null;
 
 function updateTransactionStatus(id, status, message) {
     const statusElement = document.querySelector(`#${id} .tx-state`);
     statusElement.textContent = message;
     statusElement.className = `tx-state ${status}`;
+}
+
+async function fetchAndDisplayAssets() {
+    if (!userAddress) return;
+    
+    try {
+        const response = await fetch(`/api/user-assets/${userAddress}`);
+        const data = await response.json();
+        
+        if (data.success && data.assets.length > 0) {
+            const assetsContainer = document.getElementById('userAssets');
+            assetsContainer.innerHTML = ''; // Clear existing assets
+            
+            data.assets.forEach(asset => {
+                const assetData = asset._source;
+                const did = `${assetData.id || assetData.nft.address}`;
+                const marketUrl = `https://market.oceanprotocol.com/asset/${did}`;
+                const card = document.createElement('div');
+                card.className = 'asset-card window';
+                
+                // Format the date nicely
+                const createdDate = new Date(assetData.metadata.created).toLocaleString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+
+                card.innerHTML = `
+                    <div class="title-bar">
+                        <div class="title-bar-text">${assetData.metadata.name}</div>
+                        <div class="title-bar-controls">
+                            <button aria-label="Minimize"></button>
+                            <button aria-label="Maximize"></button>
+                            <button aria-label="Close"></button>
+                        </div>
+                    </div>
+                    <div class="window-body">
+                        <p><strong>Description:</strong> ${assetData.metadata.description}</p>
+                        <p><strong>Author:</strong> ${assetData.metadata.author}</p>
+                        <p><strong>Created:</strong> ${createdDate}</p>
+                        <p><strong>NFT Address:</strong> ${assetData.nft.address}</p>
+                        <p><strong>Datatoken:</strong> ${assetData.datatokens[0].symbol}</p>
+                        <div class="button-bar">
+                            <button onclick="window.open('${marketUrl}', '_blank')" class="market-btn">
+                                View in Ocean Market
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                assetsContainer.appendChild(card);
+            });
+        } else {
+            // If no assets, show a message
+            const assetsContainer = document.getElementById('userAssets');
+            assetsContainer.innerHTML = `
+                <div class="no-assets-message">
+                    No NFTs found for this wallet. Create your first NFT above!
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Error fetching assets:', error);
+    }
 }
 
 async function connectWallet() {
@@ -15,8 +82,15 @@ async function connectWallet() {
             userAddress = accounts[0];
             web3 = new Web3(window.ethereum);
             
-            document.getElementById('walletConnectBtn').textContent = `Connected: ${userAddress.slice(0, 6)}...${userAddress.slice(-4)}`;
+            document.getElementById('walletConnectBtn').textContent = 
+                `Connected: ${userAddress.slice(0, 6)}...${userAddress.slice(-4)}`;
             document.getElementById('createNftBtn').disabled = false;
+            
+            // Start fetching assets
+            await fetchAndDisplayAssets();
+            if (assetsUpdateInterval) clearInterval(assetsUpdateInterval);
+            assetsUpdateInterval = setInterval(fetchAndDisplayAssets, 30000);
+
             
             // Handle account changes
             window.ethereum.on('accountsChanged', function (accounts) {

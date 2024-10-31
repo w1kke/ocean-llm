@@ -232,3 +232,179 @@ body {
     color: #383d41;
     border: 1px solid #d6d8db;
 }
+
+.assets-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+    padding: 1rem;
+    max-height: 400px;
+    overflow-y: auto;
+    margin-bottom: 1rem;
+    background: #fff;
+    border: 1px solid #9ba1a8;
+}
+
+.asset-card {
+    background: #fff;
+    border: 1px solid #9ba1a8;
+    box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.asset-card .title-bar {
+    background: linear-gradient(to right, #0054E3 0%, #0078D7 100%);
+    color: white;
+    padding: 4px;
+}
+
+.asset-card .window-body {
+    padding: 8px;
+    background: #F0F0F0;
+}
+
+.asset-card p {
+    margin: 4px 0;
+    font-size: 11px;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    color: #333;
+    padding: 2px 4px;
+    border-bottom: 1px solid #e1e1e1;
+}
+
+.asset-card a {
+    color: #0066cc;
+    text-decoration: none;
+}
+
+.asset-card a:hover {
+    text-decoration: underline;
+}
+
+.button-bar {
+    margin-top: 8px;
+    text-align: right;
+    padding: 4px;
+    background: #F0F0F0;
+    border-top: 1px solid #e1e1e1;
+}
+
+.market-btn {
+    padding: 4px 10px;
+    background: linear-gradient(180deg, #ffffff 0%, #e1e1e1 100%);
+    border: 1px solid #999;
+    border-radius: 3px;
+    color: #000;
+    font-size: 11px;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    cursor: pointer;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+}
+
+.market-btn:hover {
+    background: linear-gradient(180deg, #e1e1e1 0%, #d1d1d1 100%);
+}
+
+.market-btn:active {
+    background: #d1d1d1;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);
+}
+
+
+/* Asset Container */
+.assets-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+    padding: 8px;
+    max-height: 400px;
+    overflow-y: auto;
+    margin: 10px 0;
+    background: #fff;
+    border: 1px solid #9ba1a8;
+}
+
+/* Asset Cards */
+.asset-card {
+    background: #fff;
+    border: 1px solid #9ba1a8;
+    box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.asset-card .title-bar {
+    background: linear-gradient(to right, #0054E3 0%, #0078D7 100%);
+    color: white;
+    padding: 4px;
+}
+
+.asset-card .window-body {
+    padding: 8px;
+    background: #F0F0F0;
+    display: flex;
+    flex-direction: column;
+}
+
+.asset-card p {
+    margin: 4px 0;
+    font-size: 11px;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    color: #333;
+    padding: 2px 4px;
+    border-bottom: 1px solid #e1e1e1;
+}
+
+.asset-card p strong {
+    display: inline-block;
+    width: 80px;
+    color: #666;
+}
+
+.asset-card a {
+    color: #0066cc;
+    text-decoration: none;
+}
+
+.asset-card a:hover {
+    text-decoration: underline;
+}
+
+/* Button Styles */
+.button-bar {
+    margin-top: 8px;
+    text-align: right;
+    padding: 4px;
+    background: #F0F0F0;
+    border-top: 1px solid #e1e1e1;
+}
+
+.market-btn {
+    padding: 4px 10px;
+    background: linear-gradient(180deg, #ffffff 0%, #e1e1e1 100%);
+    border: 1px solid #999;
+    border-radius: 3px;
+    color: #000;
+    font-size: 11px;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    cursor: pointer;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+}
+
+.market-btn:hover {
+    background: linear-gradient(180deg, #e1e1e1 0%, #d1d1d1 100%);
+}
+
+.market-btn:active {
+    background: #d1d1d1;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);
+}
+
+/* Empty State Message */
+.no-assets-message {
+    padding: 20px;
+    text-align: center;
+    color: #666;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 12px;
+    background: #f9f9f9;
+    border: 1px solid #ddd;
+    margin: 10px;
+}
