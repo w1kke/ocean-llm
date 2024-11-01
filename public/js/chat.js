@@ -310,6 +310,11 @@ async function proceedWithNftCreation() {
         console.log('receipt logs:', receipt.logs);
         const nftAddress = receipt.logs[2].address; // The third log contains the NFT address
         const datatokenAddress = receipt.logs[7].address;
+        const dispenserAddress = receipt.logs[13].address; // double check this
+
+        console.log(nftAddress);
+        console.log(datatokenAddress);
+        console.log(dispenserAddress);
 
         document.getElementById('nftResult').textContent = 'Preparing metadata encryption...';
 
@@ -323,6 +328,7 @@ async function proceedWithNftCreation() {
             body: JSON.stringify({
                 nftAddress,
                 datatokenAddress,
+                dispenserAddress,
                 metadata: createData.metadata,
                 chainId,
                 publisherAddress: userAddress
