@@ -441,3 +441,10 @@ body {
     font-weight: bold;
     text-align: center;
 }
+
+.asset-image {
+    max-width: 100%;
+    max-height: 100px;
+    object-fit: contain;
+    border: 1px solid #9ba1a8;
+}
