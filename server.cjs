@@ -103,10 +103,10 @@ async function generateMetadata(prompt, userPrice = null) {
         }`),
         new HumanMessage(`Create detailed NFT metadata for this concept: ${prompt}`)
     ];
-    
+
     const aiResponse = await chat.invoke(messages);
     const metadata = JSON.parse(aiResponse.content.replace(/`/g, '').trim());
-    
+
     // Use user-provided price if specified, otherwise use the AI-suggested price
     metadata.price = userPrice ? ethers.utils.parseUnits(userPrice, 18).toString() : ethers.utils.parseUnits(metadata.suggestedPrice || '1', 18).toString();
 
@@ -165,7 +165,7 @@ async function uploadToIPFS(fileData, fileName) {
 app.get('/api/user-assets/:address/:chainId', async (req, res) => {
     try {
         const { address, chainId } = req.params;
-        
+
         const response = await fetch('https://v4.aquarius.oceanprotocol.com/api/aquarius/assets/query', {
             method: 'POST',
             headers: {
@@ -240,12 +240,12 @@ app.post('/api/upload', async (req, res) => {
 
 app.post('/api/create-and-publish-nft', async (req, res) => {
     const { prompt, userAddress, ipfsUrl } = req.body;
-    
+
     try {
         const metadata = await generateMetadata(prompt);
-        
+
         const previewImageUrl = await generateAndUploadPreviewImage(metadata.imagePrompt);
-        
+
         metadata.previewImageUrl = previewImageUrl;
         if (ipfsUrl) {
             metadata.assetUrl = ipfsUrl;
@@ -266,7 +266,7 @@ app.post('/api/create-and-publish-nft', async (req, res) => {
             transferable: true,
             owner: checksummedUserAddress
         };
-        
+
         const datatokenParams = {
             templateIndex: 1,
             strings: [metadata.datatokenName, metadata.datatokenSymbol],
@@ -283,26 +283,15 @@ app.post('/api/create-and-publish-nft', async (req, res) => {
             bytess: []
         };
 
-/*         const datatokenParams = {
-            templateIndex: 1,
-            cap: '100000',
-            feeAmount: '0',
-            paymentCollector: ZERO_ADDRESS,
-            feeToken: ZERO_ADDRESS,
-            minter: checksummedUserAddress,
-            mpFeeAddress: ZERO_ADDRESS
-        }; */
-
-        const sepolia_dispenser = '0x2720d405ef70x2720d405ef7cDC8a2E2e5AeBC8883C99611d893C';
-
         const dispenserParams = {
             dispenserAddress: oceanConfig.dispenserAddress,
-            maxTokens: '1',
-            maxBalance: '1',
+            maxTokens: ethers.utils.parseUnits('1000', 18).toString(),
+            maxBalance: ethers.utils.parseUnits('100', 18).toString(),
             withMint: true,
             allowedSwapper: ZERO_ADDRESS
-          }
-        
+        };
+
+        /*
         const freParams = {
             fixedPriceAddress: oceanConfig.fixedRateExchangeAddress, // Correct reference for fixed rate address
             addresses: [
@@ -319,12 +308,12 @@ app.post('/api/create-and-publish-nft', async (req, res) => {
                 1 // withMint flag (1 for true)
             ]
         };
-        
-        
+        */
+
         console.log("NFT Params:", nftParams);
         console.log("Datatoken Params:", datatokenParams);
-        console.log("Fixed Rate Params:", freParams);
-        
+        //console.log("Fixed Rate Params:", freParams);
+
         const txData = await factory.contract.populateTransaction.createNftWithErc20WithDispenser(
             [
                 nftParams.name, nftParams.symbol, nftParams.templateIndex,
@@ -341,8 +330,8 @@ app.post('/api/create-and-publish-nft', async (req, res) => {
                 dispenserParams.allowedSwapper
             ]
         );
-        
-        
+
+
 
         // Estimate gas for the first transaction
         const gasEstimate = await provider.estimateGas({
@@ -418,25 +407,22 @@ app.post('/api/encrypt-metadata', async (req, res) => {
             ]
         };
 
-        // Prepare DDO metadata with IPFS file encryption
+        // Prepare `Files` object with updated `datatokenAddress` and `nftAddress`
         const Files = {
-            datatokenAddress: '0x0',
-            nftAddress: '0x0',
+            datatokenAddress: datatokenAddress,
+            nftAddress: checksummedNftAddress,
             files: [
-              {
-                type: 'url',
-                url: metadata.assetUrl,
-                method: 'GET'
-              }
+                {
+                    type: 'url',
+                    url: metadata.assetUrl,
+                    method: 'GET'
+                }
             ]
-          };
-        
-        fixedDDO = {...ddo};
+        };
 
+        const fixedDDO = { ...ddo };
 
-        Files.datatokenAddress = datatokenAddress;
-        Files.nftAddress = nftAddress;
-        // Encrypt the files
+        // Encrypt the files and set them in `fixedDDO.services[0].files`
         fixedDDO.services[0].files = await ProviderInstance.encrypt(
             Files,
             oceanConfig.chainId,
@@ -444,16 +430,16 @@ app.post('/api/encrypt-metadata', async (req, res) => {
         );
         fixedDDO.services[0].datatokenAddress = datatokenAddress;
 
+        console.log('NFT Address:', checksummedNftAddress);
+        console.log('Datatoken Address:', datatokenAddress);
 
-        console.log(checksummedNftAddress) 
-        console.log(datatokenAddress)
-
-        // Encrypt the full DDO for Ocean Protocol
+        // Encrypt the full DDO
         const encryptedDDO = await ProviderInstance.encrypt(
             fixedDDO,
             oceanConfig.chainId,
             oceanConfig.providerUri
         );
+
 
         // Validate the DDO with Aquarius
         const aquarius = new Aquarius(oceanConfig.metadataCacheUri);
