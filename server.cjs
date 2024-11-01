@@ -3,7 +3,7 @@ require('blob-polyfill');
 const express = require('express');
 const { ChatOpenAI } = require('@langchain/openai');
 const { HumanMessage, SystemMessage } = require('@langchain/core/messages');
-const { NftFactory, ConfigHelper, ProviderInstance, Aquarius, getHash } = require('@oceanprotocol/lib');
+const { NftFactory, ConfigHelper, ProviderInstance, Aquarius, getHash, ZERO_ADDRESS } = require('@oceanprotocol/lib');
 const CryptoJS = require('crypto-js');
 const ethers = require('ethers');
 const fileUpload = require('express-fileupload');
@@ -71,18 +71,23 @@ async function initializeOcean() {
         providerUri: process.env.PROVIDER_URL,
         metadataCacheUri: process.env.AQUARIUS_URL,
         nftFactoryAddress: baseConfig.nftFactoryAddress,
-        chainId: baseConfig.chainId
+        chainId: baseConfig.chainId,
+        OPFCommunityFeeCollector: baseConfig.OPFCommunityFeeCollector,
+        FixedPrice: baseConfig.FixedPrice
     };
 }
+
+
+
 
 function calculateDID(nftAddress, chainId) {
     const checksum = CryptoJS.SHA256(nftAddress + chainId.toString(10)).toString(CryptoJS.enc.Hex);
     return `did:op:${checksum}`;
 }
 
-async function generateMetadata(prompt) {
+async function generateMetadata(prompt, userPrice = null) {
     const messages = [
-        new SystemMessage(`You are an AI that creates detailed NFT metadata. Create engaging and creative metadata that matches the user's concept.
+        new SystemMessage(`You are an AI that creates detailed NFT metadata with an estimated price. Provide engaging metadata that captures the essence of the concept.
         Respond in JSON format with:
         {
             "nftName": "Creative and catchy name",
@@ -93,14 +98,21 @@ async function generateMetadata(prompt) {
             "author": "Generated author name",
             "tags": ["array", "of", "relevant", "descriptive", "tags"],
             "category": "Primary category of the NFT",
+            "suggestedPrice": "Suggested price for datatoken in Ocean tokens number only",
             "imagePrompt": "Detailed prompt for DALL-E to generate a preview image"
         }`),
         new HumanMessage(`Create detailed NFT metadata for this concept: ${prompt}`)
     ];
     
     const aiResponse = await chat.invoke(messages);
-    return JSON.parse(aiResponse.content.replace(/`/g, '').trim());
+    const metadata = JSON.parse(aiResponse.content.replace(/`/g, '').trim());
+    
+    // Use user-provided price if specified, otherwise use the AI-suggested price
+    metadata.price = userPrice ? ethers.utils.parseUnits(userPrice, 18).toString() : ethers.utils.parseUnits(metadata.suggestedPrice || '1', 18).toString();
+
+    return metadata;
 }
+
 
 async function generateAndUploadPreviewImage(imagePrompt) {
     // Generate preview image using DALL-E
@@ -241,6 +253,7 @@ app.post('/api/create-and-publish-nft', async (req, res) => {
 
         // Ocean Protocol NFT creation setup
         const oceanConfig = await initializeOcean();
+        console.log("Ocean Config:", oceanConfig);
         const provider = new ethers.providers.JsonRpcProvider(oceanConfig.nodeUri);
         const factory = new NftFactory(oceanConfig.nftFactoryAddress, provider);
         const checksummedUserAddress = ethers.utils.getAddress(userAddress);
@@ -253,24 +266,46 @@ app.post('/api/create-and-publish-nft', async (req, res) => {
             transferable: true,
             owner: checksummedUserAddress
         };
-
+        
         const datatokenParams = {
             templateIndex: 1,
             strings: [metadata.datatokenName, metadata.datatokenSymbol],
-            addresses: [checksummedUserAddress, checksummedUserAddress, checksummedUserAddress, oceanConfig.oceanTokenAddress],
-            uints: [ethers.utils.parseUnits('100000', 18).toString(), '0'],
+            addresses: [
+                checksummedUserAddress,          // Minter
+                checksummedUserAddress,          // Payment collector
+                checksummedUserAddress,          // Fee address (could vary if there's a separate fee collector)
+                oceanConfig.oceanTokenAddress    // Base token (usually the address for Ocean token)
+            ],
+            uints: [
+                ethers.utils.parseUnits('100000', 18).toString(), // Cap
+                '0'                                               // Fee amount (assuming no fee)
+            ],
             bytess: []
         };
-
-        const dispenserParams = {
-            dispenserAddress: oceanConfig.dispenserAddress,
-            maxTokens: ethers.utils.parseUnits('1000', 18).toString(),
-            maxBalance: ethers.utils.parseUnits('100', 18).toString(),
-            withMint: true,
-            allowedSwapper: checksummedUserAddress
+        
+        const freParams = {
+            fixedPriceAddress: oceanConfig.fixedRateExchangeAddress, // Correct reference for fixed rate address
+            addresses: [
+                oceanConfig.oceanTokenAddress,         // Base token address (usually Ocean token)
+                checksummedUserAddress,                // Owner address
+                oceanConfig.opfCommunityFeeCollector,  // Market fee collector address
+                ZERO_ADDRESS                           // Allowed consumer (zero for no restrictions)
+            ],
+            uints: [
+                18, // Base token decimals (Ocean token standard)
+                18, // Datatoken decimals
+                ethers.utils.parseUnits(metadata.suggestedPrice || '1', 18).toString(), // Fixed price (suggested or default 1 Ocean)
+                ethers.utils.parseUnits('0.001', 18).toString(), // Market fee (default 0.001 Ocean)
+                1 // withMint flag (1 for true)
+            ]
         };
-
-        const txData = await factory.contract.populateTransaction.createNftWithErc20WithDispenser(
+        
+        
+        console.log("NFT Params:", nftParams);
+        console.log("Datatoken Params:", datatokenParams);
+        console.log("Fixed Rate Params:", freParams);
+        
+        const txData = await factory.contract.populateTransaction.createNftWithErc20WithFixedRate(
             [
                 nftParams.name, nftParams.symbol, nftParams.templateIndex,
                 nftParams.tokenURI, nftParams.transferable, nftParams.owner
@@ -281,11 +316,11 @@ app.post('/api/create-and-publish-nft', async (req, res) => {
                 datatokenParams.bytess
             ],
             [
-                dispenserParams.dispenserAddress, dispenserParams.maxTokens,
-                dispenserParams.maxBalance, dispenserParams.withMint,
-                dispenserParams.allowedSwapper
+                freParams.fixedPriceAddress, freParams.addresses, freParams.uints
             ]
         );
+        
+        
 
         // Estimate gas for the first transaction
         const gasEstimate = await provider.estimateGas({
@@ -329,9 +364,15 @@ app.post('/api/encrypt-metadata', async (req, res) => {
         const did = calculateDID(checksummedNftAddress, chainId);
 
         // Prepare DDO metadata with IPFS file encryption
-        const ipfsFile = { type: "ipfs", hash: metadata.assetUrl.split('/').pop() };
+        const files = {
+            type: "url",
+            url: metadata.assetUrl,
+            method: 'GET'
+        };
+        
+        // Encrypt the files
         const encryptedFiles = await ProviderInstance.encrypt(
-            [ipfsFile],
+            files,
             oceanConfig.chainId,
             oceanConfig.providerUri
         );

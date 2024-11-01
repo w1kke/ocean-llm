@@ -243,9 +243,11 @@ async function createNft() {
                 <p><strong>Category:</strong> ${createData.metadata.category}</p>
                 <p><strong>Tags:</strong> ${createData.metadata.tags.join(', ')}</p>
                 ${createData.metadata.assetUrl ? `<p><strong>Main Asset:</strong> ${createData.metadata.assetUrl}</p>` : ''}
+                <p><strong>Price:</strong> ${createData.metadata.suggestedPrice} Ocean Tokens</p>
             </div>
             <p class="confirmation-prompt">Would you like to create this NFT?</p>
         `;
+    
         
         const messagesDiv = document.getElementById('messages');
         messagesDiv.appendChild(previewDiv);
