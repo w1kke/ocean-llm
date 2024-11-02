@@ -1,0 +1,73 @@
+.btn {
+    padding: 5px 10px;
+    background: #c0c0c0;
+    border: 2px solid #fff;
+    border-right-color: #000;
+    border-bottom-color: #000;
+    color: #000;
+    cursor: pointer;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn:active {
+    border: 2px solid #000;
+    border-right-color: #fff;
+    border-bottom-color: #fff;
+}
+
+.market-btn, .share-btn {
+    padding: 4px 10px;
+    background: linear-gradient(180deg, #ffffff 0%, #e1e1e1 100%);
+    border: 1px solid #999;
+    border-radius: 3px;
+    color: #000;
+    font-size: 11px;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    cursor: pointer;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+}
+
+.market-btn:hover, .share-btn:hover {
+    background: linear-gradient(180deg, #e1e1e1 0%, #d1d1d1 100%);
+}
+
+.market-btn:active {
+    background: #d1d1d1;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.button-bar {
+    margin-top: 8px;
+    text-align: right;
+    padding: 4px;
+    background: #F0F0F0;
+    border-top: 1px solid #e1e1e1;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.dialog-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.remove-friend {
+    background: #ff4444;
+    color: white;
+    border: 1px solid #cc0000;
+    padding: 2px 6px;
+    cursor: pointer;
+    font-size: 0.8em;
+    border-radius: 3px;
+}
+
+.remove-friend:hover {
+    background: #cc0000;
+}

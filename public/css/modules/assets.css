@@ -1,0 +1,86 @@
+.assets-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+    padding: 1rem;
+    max-height: 400px;
+    overflow-y: auto;
+    margin-bottom: 1rem;
+    background: #fff;
+    border: 1px solid #9ba1a8;
+}
+
+.asset-card {
+    background: #fff;
+    border: 1px solid #9ba1a8;
+    box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.asset-card .title-bar {
+    background: linear-gradient(to right, #0054E3 0%, #0078D7 100%);
+    color: white;
+    padding: 4px;
+}
+
+.asset-card .window-body {
+    padding: 8px;
+    background: #F0F0F0;
+}
+
+.asset-card p {
+    margin: 4px 0;
+    font-size: 11px;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    color: #333;
+    padding: 2px 4px;
+    border-bottom: 1px solid #e1e1e1;
+}
+
+.asset-card a {
+    color: #0066cc;
+    text-decoration: none;
+}
+
+.asset-card a:hover {
+    text-decoration: underline;
+}
+
+.asset-image {
+    max-width: 100%;
+    max-height: 100px;
+    object-fit: contain;
+    border: 1px solid #9ba1a8;
+}
+
+.nft-preview {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 15px;
+    margin: 10px 0;
+}
+
+.preview-image-container {
+    text-align: center;
+    margin-bottom: 15px;
+}
+
+.preview-image {
+    max-width: 300px;
+    max-height: 300px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.metadata-details {
+    margin: 15px 0;
+}
+
+.metadata-details p {
+    margin: 5px 0;
+}
+
+.confirmation-prompt {
+    margin-top: 15px;
+    font-weight: bold;
+    text-align: center;
+}
