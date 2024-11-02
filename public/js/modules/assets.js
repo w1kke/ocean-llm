@@ -57,6 +57,9 @@ async function fetchAndDisplayAssets() {
                             <button onclick="window.open('${marketUrl}', '_blank')" class="market-btn">
                                 View in Ocean Market
                             </button>
+                            <button onclick="window.showDeleteConfirmation('${assetData.nft.address}', '${assetData.metadata.name}')" class="delete-btn">
+                                Delete
+                            </button>
                         </div>
                     </div>
                 `;
@@ -195,6 +198,96 @@ async function shareAccess() {
     }
 }
 
+// Add these functions to handle NFT deletion
+function showDeleteConfirmation(nftAddress, nftName) {
+    // Create overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    document.body.appendChild(overlay);
+
+    // Create confirmation dialog
+    const dialog = document.createElement('div');
+    dialog.className = 'delete-dialog window';
+    dialog.innerHTML = `
+        <div class="title-bar">
+            <div class="title-bar-text">Confirm Delete</div>
+            <div class="title-bar-controls">
+                <button aria-label="Close" onclick="window.closeDeleteDialog()"></button>
+            </div>
+        </div>
+        <div class="window-body">
+            <p>Are you sure you want to delete "${nftName}"?</p>
+            <p class="warning-text">This action cannot be undone!</p>
+            <div class="dialog-buttons">
+                <button class="btn" onclick="window.closeDeleteDialog()">Cancel</button>
+                <button class="btn delete-confirm-btn" onclick="window.deleteNFT('${nftAddress}')">Delete</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(dialog);
+}
+
+function closeDeleteDialog() {
+    const dialog = document.querySelector('.delete-dialog');
+    const overlay = document.querySelector('.overlay');
+    if (dialog) dialog.remove();
+    if (overlay) overlay.remove();
+}
+
+async function deleteNFT(nftAddress) {
+    try {
+        // Show status in the dialog
+        const dialogBody = document.querySelector('.delete-dialog .window-body');
+        const statusDiv = document.createElement('div');
+        statusDiv.className = 'transaction-status';
+        statusDiv.innerHTML = `
+            <div id="deleteStatus" class="tx-status">
+                <span class="tx-label">Deleting NFT:</span>
+                <span class="tx-state waiting">Preparing transaction...</span>
+            </div>
+        `;
+        dialogBody.appendChild(statusDiv);
+
+        // Get the transaction data from the server
+        const response = await fetch('/api/prepare-nft-delete', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                nftAddress,
+                userAddress: window.userAddress
+            })
+        });
+
+        const data = await response.json();
+        if (!data.success) throw new Error(data.error);
+
+        // Update status
+        window.updateTransactionStatus('deleteStatus', 'pending', 'Waiting for approval...');
+
+        // Send the transaction
+        const tx = await window.web3.eth.sendTransaction({
+            ...data.transaction,
+            from: window.userAddress
+        });
+
+        // Wait for transaction confirmation
+        await window.waitForTransaction(tx.transactionHash, 'deleteStatus');
+
+        // Update status and refresh assets
+        window.updateTransactionStatus('deleteStatus', 'success', 'NFT deleted successfully!');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        await window.fetchAndDisplayAssets();
+        closeDeleteDialog();
+
+    } catch (error) {
+        console.error('Error deleting NFT:', error);
+        window.updateTransactionStatus('deleteStatus', 'error', 'Error: ' + error.message);
+    }
+}
+
+
 // Export functions and variables
 window.assetsUpdateInterval = assetsUpdateInterval;
 window.selectedNFTForSharing = selectedNFTForSharing;
@@ -203,3 +296,6 @@ window.showShareDialog = showShareDialog;
 window.closeShareDialog = closeShareDialog;
 window.toggleFriendSelection = toggleFriendSelection;
 window.shareAccess = shareAccess;
+window.showDeleteConfirmation = showDeleteConfirmation;
+window.closeDeleteDialog = closeDeleteDialog;
+window.deleteNFT = deleteNFT;

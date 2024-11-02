@@ -354,16 +354,37 @@ router.post('/prepare-nft-delete', async (req, res) => {
         const oceanConfig = await initializeOcean();
         const provider = new ethers.providers.JsonRpcProvider(oceanConfig.nodeUri);
         
+        // Create empty DDO for deletion
+        const emptyDDO = {
+            '@context': ['https://w3id.org/did/v1'],
+            version: '4.1.0',
+            metadata: {
+                deleted: true,
+                type: 'dataset'
+            }
+        };
+
+        // Encrypt the empty DDO
+        const encryptedDDO = await ProviderInstance.encrypt(
+            emptyDDO,
+            oceanConfig.chainId,
+            oceanConfig.providerUri
+        );
+
+        // Calculate metadata hash
+        const rawHash = getHash(JSON.stringify(emptyDDO));
+        const metadataHash = rawHash.startsWith('0x') ? rawHash : `0x${rawHash}`;
+
         // Create the transaction data for setMetaData with state 1 (deleted)
         const nftInterface = new ethers.utils.Interface(nftAbi);
         const txData = nftInterface.encodeFunctionData("setMetaData", [
-            1,                          // _metaDataState (1 = deleted)
-            "0x",                       // _metaDataDecryptorUrl (empty bytes)
-            "0x0000000000000000000000000000000000000000", // _metaDataDecryptorAddress
-            "0x00",                     // flags
-            "0x",                       // data (empty bytes)
-            "0x0000000000000000000000000000000000000000000000000000000000000000", // _metaDataHash
-            []                          // additionalParams
+            1,                                  // _metaDataState (1 = deleted)
+            oceanConfig.providerUri,            // _metaDataDecryptorUrl
+            '0x123',                           // _metaDataDecryptorAddress
+            '0x02',                            // flags
+            encryptedDDO,                      // data (encrypted empty DDO)
+            metadataHash,                      // _metaDataHash
+            []                                 // additionalParams
         ]);
 
         // Estimate gas
