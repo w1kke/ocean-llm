@@ -1,8 +1,11 @@
+// Existing variables
 let userAddress = null;
 let web3;
 let ipfsUrl = null;
 let assetsUpdateInterval = null;
 let friends = [];
+let selectedNFTForSharing = null;
+
 
 function updateTransactionStatus(id, status, message) {
     const statusElement = document.querySelector(`#${id} .tx-state`);
@@ -125,6 +128,9 @@ async function fetchAndDisplayAssets() {
                         <p><strong>NFT Address:</strong> ${assetData.nft.address}</p>
                         <p><strong>Datatoken:</strong> ${assetData.datatokens[0].symbol}</p>
                         <div class="button-bar">
+                            <button onclick="showShareDialog('${assetData.nft.address}')" class="share-btn">
+                                Share Access
+                            </button>
                             <button onclick="window.open('${marketUrl}', '_blank')" class="market-btn">
                                 View in Ocean Market
                             </button>
@@ -146,6 +152,77 @@ async function fetchAndDisplayAssets() {
         console.error('Error fetching assets:', error);
     }
 }
+
+function showShareDialog(nftAddress) {
+    selectedNFTForSharing = nftAddress;
+    
+    // Create overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    document.body.appendChild(overlay);
+
+    // Create dialog
+    const dialog = document.createElement('div');
+    dialog.className = 'share-dialog window';
+    dialog.innerHTML = `
+        <div class="title-bar">
+            <div class="title-bar-text">Share NFT Access</div>
+            <div class="title-bar-controls">
+                <button aria-label="Close" onclick="closeShareDialog()"></button>
+            </div>
+        </div>
+        <div class="window-body">
+            <p>Select a friend to share access with:</p>
+            <div class="share-dialog-content" id="shareFriendsList">
+                ${friends.length > 0 ? 
+                    friends.map(friend => `
+                        <div class="share-friend-item" onclick="toggleFriendSelection(this, '${friend}')">
+                            ${friend.slice(0, 6)}...${friend.slice(-4)}
+                        </div>
+                    `).join('') : 
+                    '<p>No friends added yet. Add friends to share your NFT access.</p>'
+                }
+            </div>
+            <div class="dialog-buttons">
+                <button class="btn" onclick="closeShareDialog()">Cancel</button>
+                <button class="btn" onclick="shareAccess()" id="shareButton" ${friends.length === 0 ? 'disabled' : ''}>Share</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(dialog);
+}
+
+function closeShareDialog() {
+    const dialog = document.querySelector('.share-dialog');
+    const overlay = document.querySelector('.overlay');
+    if (dialog) dialog.remove();
+    if (overlay) overlay.remove();
+    selectedNFTForSharing = null;
+}
+
+function toggleFriendSelection(element, friendAddress) {
+    const allItems = document.querySelectorAll('.share-friend-item');
+    allItems.forEach(item => item.classList.remove('selected'));
+    element.classList.add('selected');
+}
+
+async function shareAccess() {
+    const selectedFriend = document.querySelector('.share-friend-item.selected');
+    if (!selectedFriend || !selectedNFTForSharing) return;
+
+    const friendAddress = selectedFriend.textContent.trim();
+    
+    // TODO: Implement the actual sharing logic here
+    console.log(`Sharing NFT ${selectedNFTForSharing} with friend ${friendAddress}`);
+    
+    // Close the dialog
+    closeShareDialog();
+    
+    // Show success message
+    alert('Sharing functionality will be implemented in the next phase!');
+}
+
+
 
 async function connectWallet() {
     if (typeof window.ethereum !== 'undefined') {
