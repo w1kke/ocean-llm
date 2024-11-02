@@ -2,11 +2,78 @@ let userAddress = null;
 let web3;
 let ipfsUrl = null;
 let assetsUpdateInterval = null;
+let friends = [];
 
 function updateTransactionStatus(id, status, message) {
     const statusElement = document.querySelector(`#${id} .tx-state`);
     statusElement.textContent = message;
     statusElement.className = `tx-state ${status}`;
+}
+
+// Friends List Functions
+function isValidEthereumAddress(address) {
+    return web3 && web3.utils.isAddress(address);
+}
+
+function saveFriends() {
+    localStorage.setItem(`friends_${userAddress}`, JSON.stringify(friends));
+}
+
+function loadFriends() {
+    const savedFriends = localStorage.getItem(`friends_${userAddress}`);
+    friends = savedFriends ? JSON.parse(savedFriends) : [];
+    renderFriendsList();
+}
+
+function renderFriendsList() {
+    const friendsList = document.getElementById('friendsList');
+    friendsList.innerHTML = '';
+    
+    if (friends.length === 0) {
+        friendsList.innerHTML = '<div class="friend-item">No friends added yet</div>';
+        return;
+    }
+    
+    friends.forEach((friend, index) => {
+        const friendElement = document.createElement('div');
+        friendElement.className = 'friend-item';
+        friendElement.innerHTML = `
+            <span class="friend-address">${friend.slice(0, 6)}...${friend.slice(-4)}</span>
+            <button class="remove-friend" onclick="removeFriend(${index})">×</button>
+        `;
+        friendsList.appendChild(friendElement);
+    });
+}
+
+function addFriend() {
+    const addressInput = document.getElementById('friendAddress');
+    const address = addressInput.value.trim();
+    
+    if (!isValidEthereumAddress(address)) {
+        alert('Please enter a valid Ethereum address');
+        return;
+    }
+    
+    if (address === userAddress) {
+        alert('You cannot add your own address');
+        return;
+    }
+    
+    if (friends.includes(address)) {
+        alert('This address is already in your friends list');
+        return;
+    }
+    
+    friends.push(address);
+    saveFriends();
+    renderFriendsList();
+    addressInput.value = '';
+}
+
+function removeFriend(index) {
+    friends.splice(index, 1);
+    saveFriends();
+    renderFriendsList();
 }
 
 async function fetchAndDisplayAssets() {
@@ -80,7 +147,6 @@ async function fetchAndDisplayAssets() {
     }
 }
 
-
 async function connectWallet() {
     if (typeof window.ethereum !== 'undefined') {
         try {
@@ -91,23 +157,31 @@ async function connectWallet() {
             document.getElementById('walletConnectBtn').textContent = 
                 `Connected: ${userAddress.slice(0, 6)}...${userAddress.slice(-4)}`;
             document.getElementById('createNftBtn').disabled = false;
+            document.getElementById('addFriendBtn').disabled = false;
+            
+            // Load friends list
+            loadFriends();
             
             // Start fetching assets
             await fetchAndDisplayAssets();
             if (assetsUpdateInterval) clearInterval(assetsUpdateInterval);
             assetsUpdateInterval = setInterval(fetchAndDisplayAssets, 30000);
 
-            
             // Handle account changes
             window.ethereum.on('accountsChanged', function (accounts) {
                 if (accounts.length === 0) {
                     userAddress = null;
                     document.getElementById('walletConnectBtn').textContent = 'Connect Wallet';
                     document.getElementById('createNftBtn').disabled = true;
+                    document.getElementById('addFriendBtn').disabled = true;
+                    friends = [];
+                    renderFriendsList();
                 } else {
                     userAddress = accounts[0];
                     document.getElementById('walletConnectBtn').textContent = `Connected: ${userAddress.slice(0, 6)}...${userAddress.slice(-4)}`;
                     document.getElementById('createNftBtn').disabled = false;
+                    document.getElementById('addFriendBtn').disabled = false;
+                    loadFriends();
                 }
             });
         } catch (error) {
@@ -183,9 +257,7 @@ async function waitForTransaction(txHash, statusId) {
             throw error;
         }
     }
-
 }
-
 
 async function createNft() {
     if (!userAddress) {
@@ -251,7 +323,6 @@ async function createNft() {
             <p class="confirmation-prompt">Would you like to create this NFT?</p>
         `;
     
-        
         const messagesDiv = document.getElementById('messages');
         messagesDiv.appendChild(previewDiv);
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
@@ -384,5 +455,14 @@ document.getElementById('chatInput').addEventListener('keypress', function(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         createNft();
+    }
+});
+
+// Friends List Event Listeners
+document.getElementById('addFriendBtn').addEventListener('click', addFriend);
+document.getElementById('friendAddress').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        addFriend();
     }
 });

@@ -7,45 +7,67 @@
     <link href="/css/styles.css" rel="stylesheet">
 </head>
 <body>
-    <div class="window">
-        <div class="title-bar">
-            <div class="title-bar-text">Ocean AI NFT Creator</div>
-            <div class="title-bar-controls">
-                <button aria-label="Minimize"></button>
-                <button aria-label="Maximize"></button>
-                <button aria-label="Close"></button>
+    <div class="main-container">
+        <div class="window">
+            <div class="title-bar">
+                <div class="title-bar-text">Ocean AI NFT Creator</div>
+                <div class="title-bar-controls">
+                    <button aria-label="Minimize"></button>
+                    <button aria-label="Maximize"></button>
+                    <button aria-label="Close"></button>
+                </div>
+            </div>
+            <div class="window-body">
+                <div class="toolbar">
+                    <button id="walletConnectBtn" class="btn">Connect Wallet</button>
+                </div>
+                <div class="chat-container">
+                    <div id="messages" class="messages"></div>
+                    <div class="file-upload-section">
+                        <div class="file-upload-header">Upload File for NFT</div>
+                        <input type="file" id="fileInput" class="file-input">
+                        <div id="uploadStatus" class="upload-status"></div>
+                    </div>
+                    <div class="input-group">
+                        <input type="text" id="chatInput" placeholder="Describe the NFT you want to create...">
+                        <button id="createNftBtn" class="btn" disabled>Create NFT</button>
+                    </div>
+                </div>
+                <div class="status-container">
+                    <div id="nftResult" class="status-bar"></div>
+                    <div class="transaction-status">
+                        <div id="tx1Status" class="tx-status">
+                            <span class="tx-label">NFT Creation:</span>
+                            <span class="tx-state"></span>
+                        </div>
+                        <div id="tx2Status" class="tx-status">
+                            <span class="tx-label">Metadata Encryption:</span>
+                            <span class="tx-state"></span>
+                        </div>
+                    </div>
+                </div>
+                <div id="userAssets" class="assets-container"></div>   
             </div>
         </div>
-        <div class="window-body">
-            <div class="toolbar">
-                <button id="walletConnectBtn" class="btn">Connect Wallet</button>
-            </div>
-            <div class="chat-container">
-                <div id="messages" class="messages"></div>
-                <div class="file-upload-section">
-                    <div class="file-upload-header">Upload File for NFT</div>
-                    <input type="file" id="fileInput" class="file-input">
-                    <div id="uploadStatus" class="upload-status"></div>
-                </div>
-                <div class="input-group">
-                    <input type="text" id="chatInput" placeholder="Describe the NFT you want to create...">
-                    <button id="createNftBtn" class="btn" disabled>Create NFT</button>
+
+        <div class="window friends-window">
+            <div class="title-bar">
+                <div class="title-bar-text">Friends List</div>
+                <div class="title-bar-controls">
+                    <button aria-label="Minimize"></button>
+                    <button aria-label="Maximize"></button>
+                    <button aria-label="Close"></button>
                 </div>
             </div>
-            <div class="status-container">
-                <div id="nftResult" class="status-bar"></div>
-                <div class="transaction-status">
-                    <div id="tx1Status" class="tx-status">
-                        <span class="tx-label">NFT Creation:</span>
-                        <span class="tx-state"></span>
+            <div class="window-body">
+                <div class="friends-container">
+                    <div class="friends-add">
+                        <input type="text" id="friendAddress" placeholder="Enter wallet address" class="friend-input">
+                        <button id="addFriendBtn" class="btn" disabled>Add Friend</button>
                     </div>
-                    <div id="tx2Status" class="tx-status">
-                        <span class="tx-label">Metadata Encryption:</span>
-                        <span class="tx-state"></span>
-                    </div>
+                    <div id="friendsList" class="friends-list"></div>
                 </div>
             </div>
-            <div id="userAssets" class="assets-container"></div>   
         </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/web3@1.8.0/dist/web3.min.js"></script>
