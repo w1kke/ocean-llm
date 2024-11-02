@@ -325,6 +325,50 @@ router.post('/encrypt-metadata', async (req, res) => {
         console.error('Error encrypting metadata:', error);
         res.status(500).json({ success: false, error: error.message });
     }
+
+});
+
+
+router.post('/prepare-nft-delete', async (req, res) => {
+    try {
+        const { nftAddress, userAddress } = req.body;
+        const oceanConfig = await initializeOcean();
+        const provider = new ethers.providers.JsonRpcProvider(oceanConfig.nodeUri);
+        
+        // Create the transaction data for setMetaData with state 1 (deleted)
+        const nftInterface = new ethers.utils.Interface(nftAbi);
+        const txData = nftInterface.encodeFunctionData("setMetaData", [
+            1,                          // _metaDataState (1 = deleted)
+            "0x",                       // _metaDataDecryptorUrl (empty bytes)
+            "0x0000000000000000000000000000000000000000", // _metaDataDecryptorAddress
+            "0x00",                     // flags
+            "0x",                       // data (empty bytes)
+            "0x0000000000000000000000000000000000000000000000000000000000000000", // _metaDataHash
+            []                          // additionalParams
+        ]);
+
+        // Estimate gas
+        const gasEstimate = await provider.estimateGas({
+            to: nftAddress,
+            data: txData,
+            from: userAddress
+        });
+
+        // Add 20% buffer to gas estimate
+        const gasLimitHex = '0x' + gasEstimate.mul(12).div(10).toHexString().slice(2);
+
+        res.json({
+            success: true,
+            transaction: {
+                to: nftAddress,
+                data: txData,
+                gasLimit: gasLimitHex
+            }
+        });
+    } catch (error) {
+        console.error('Error preparing NFT deletion:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
 });
 
 module.exports = router;
