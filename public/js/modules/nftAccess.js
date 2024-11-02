@@ -14,7 +14,7 @@ async function showNFTAccessWindow() {
     accessWindow.style.top = '50%';
     accessWindow.style.transform = 'translate(-50%, -50%)';
     accessWindow.style.zIndex = '1000';
-    accessWindow.style.width = '600px';
+    accessWindow.style.width = '800px';
 
     accessWindow.innerHTML = `
         <div class="title-bar">
@@ -46,59 +46,65 @@ async function showNFTAccessWindow() {
 
         const contentDiv = accessWindow.querySelector('#nftAccessContent');
         
-        if (data.accessibleNfts.length === 0) {
+        if (!data.accessibleNfts || data.accessibleNfts.length === 0) {
             contentDiv.innerHTML = `
                 <p>No NFT access rights found for this wallet.</p>
             `;
             return;
         }
 
-        // Separate NFTs by access type
-        const availableNfts = data.accessibleNfts.filter(nft => nft.accessType === 'Available');
-        const spentNfts = data.accessibleNfts.filter(nft => nft.accessType === 'Spent');
+        // Log the number of NFTs for debugging
+        console.log(`Displaying ${data.accessibleNfts.length} NFTs`);
 
-        // Display the NFTs
+        // Display the NFTs in a grid layout similar to assets
         contentDiv.innerHTML = `
             <div class="field-row" style="margin-bottom: 10px;">
-                <p>NFTs you have access to through Ocean Protocol:</p>
+                <p>NFTs you have access to through Ocean Protocol (${data.accessibleNfts.length} total):</p>
             </div>
             
-            ${availableNfts.length > 0 ? `
-                <div class="nft-section">
-                    <h4>Available Tokens</h4>
-                    <div class="nft-access-list">
-                        ${availableNfts.map(nft => `
-                            <div class="nft-access-item">
-                                <p><strong>NFT Name:</strong> ${nft.name || 'Unnamed'}</p>
-                                <p><strong>Symbol:</strong> ${nft.symbol || 'No Symbol'}</p>
+            <div class="nft-access-grid">
+                ${data.accessibleNfts.map(nft => {
+                    // Log each NFT for debugging
+                    console.log('Processing NFT:', nft);
+
+                    const createdDate = nft.created ? new Date(nft.created).toLocaleString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    }) : 'N/A';
+
+                    return `
+                        <div class="asset-card window">
+                            <div class="title-bar">
+                                <div class="title-bar-text">${nft.name || nft.symbol || 'Unnamed NFT'}</div>
+                                <div class="title-bar-controls">
+                                    <button aria-label="Minimize"></button>
+                                    <button aria-label="Maximize"></button>
+                                    <button aria-label="Close"></button>
+                                </div>
+                            </div>
+                            <div class="window-body">
+                                <div class="asset-preview">
+                                    <img src="${nft.previewImageUrl || '/images/icq-flower.png'}" alt="NFT Preview" class="asset-image">
+                                </div>
+                                <p><strong>Description:</strong> ${nft.description || 'No description available'}</p>
+                                <p><strong>Author:</strong> ${nft.author || 'Unknown'}</p>
+                                <p><strong>Created:</strong> ${createdDate}</p>
                                 <p><strong>NFT Address:</strong> ${nft.nftAddress}</p>
                                 <p><strong>Current Balance:</strong> ${nft.currentBalance} tokens</p>
-                                <button onclick="window.open('https://market.oceanprotocol.com/asset/${nft.did}', '_blank')" class="btn">
-                                    View in Ocean Market
-                                </button>
+                                ${nft.tags ? `<p><strong>Tags:</strong> ${nft.tags.join(', ')}</p>` : ''}
+                                <div class="button-bar">
+                                    <button onclick="window.open('https://market.oceanprotocol.com/asset/${nft.did}', '_blank')" class="market-btn">
+                                        View in Ocean Market
+                                    </button>
+                                </div>
                             </div>
-                        `).join('')}
-                    </div>
-                </div>
-            ` : ''}
-
-            ${spentNfts.length > 0 ? `
-                <div class="nft-section">
-                    <h4>Previously Accessed NFTs</h4>
-                    <div class="nft-access-list">
-                        ${spentNfts.map(nft => `
-                            <div class="nft-access-item spent">
-                                <p><strong>NFT Name:</strong> ${nft.name || 'Unnamed'}</p>
-                                <p><strong>Symbol:</strong> ${nft.symbol || 'No Symbol'}</p>
-                                <p><strong>NFT Address:</strong> ${nft.nftAddress}</p>
-                                <button onclick="window.open('https://market.oceanprotocol.com/asset/${nft.did}', '_blank')" class="btn">
-                                    View in Ocean Market
-                                </button>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            ` : ''}
+                        </div>
+                    `;
+                }).join('')}
+            </div>
         `;
 
     } catch (error) {

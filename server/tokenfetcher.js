@@ -5,7 +5,8 @@ const ERC20_ABI = [
     "function name() view returns (string)",
     "function symbol() view returns (string)",
     "function balanceOf(address) view returns (uint256)",
-    "function decimals() view returns (uint8)"
+    "function decimals() view returns (uint8)",
+    "function getERC721Address() view returns (address)"
 ];
 
 // Initial contract ABI to get token list
@@ -72,16 +73,18 @@ class TokenFetcher {
                             // Get token information
                             try {
                                 const erc20Contract = new ethers.Contract(nftAddress, ERC20_ABI, this.provider);
-                                const [name, symbol] = await Promise.all([
+                                const [name, symbol, erc721Address] = await Promise.all([
                                     erc20Contract.name(),
-                                    erc20Contract.symbol()
+                                    erc20Contract.symbol(),
+                                    erc20Contract.getERC721Address()
                                 ]);
 
                                 return {
                                     address: nftAddress,
                                     name,
                                     symbol,
-                                    initialTokenAddress: tokenAddress
+                                    initialTokenAddress: tokenAddress,
+                                    erc721Address
                                 };
                             } catch (error) {
                                 console.log('Error getting token info:', error.message);
@@ -109,11 +112,12 @@ class TokenFetcher {
     async getTokenBalance(tokenAddress, walletAddress) {
         const contract = new ethers.Contract(tokenAddress, ERC20_ABI, this.provider);
         try {
-            const [balance, name, symbol, decimals] = await Promise.all([
+            const [balance, name, symbol, decimals, erc721Address] = await Promise.all([
                 contract.balanceOf(walletAddress),
                 contract.name(),
                 contract.symbol(),
-                contract.decimals()
+                contract.decimals(),
+                contract.getERC721Address()
             ]);
 
             return {
@@ -121,7 +125,8 @@ class TokenFetcher {
                 name,
                 symbol,
                 balance: balance.toString(),
-                decimals: decimals
+                decimals: decimals,
+                erc721Address
             };
         } catch (error) {
             console.error(`Error getting token info for ${tokenAddress}:`, error);
@@ -167,7 +172,8 @@ class TokenFetcher {
                     return {
                         ...token,
                         balance: balance ? balance.balance : '0',
-                        decimals: balance ? balance.decimals : 18
+                        decimals: balance ? balance.decimals : 18,
+                        erc721Address: balance ? balance.erc721Address : token.erc721Address
                     };
                 })
             );
