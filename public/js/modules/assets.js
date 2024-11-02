@@ -50,6 +50,7 @@ async function fetchAndDisplayAssets() {
                         <p><strong>Created:</strong> ${createdDate}</p>
                         <p><strong>NFT Address:</strong> ${assetData.nft.address}</p>
                         <p><strong>Datatoken:</strong> ${assetData.datatokens[0].symbol}</p>
+                        <p><strong>Datatoken Address:</strong> ${assetData.datatokens[0].address}</p>
                         <div class="button-bar">
                             <button onclick="window.showShareDialog('${assetData.nft.address}', '${assetData.datatokens[0].address}')" class="share-btn">
                                 Share Access

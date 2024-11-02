@@ -37,7 +37,8 @@ router.get('/nft-access/:address/:chainId', async (req, res) => {
                         did: did,
                         currentBalance: ethers.utils.formatUnits(nft.balance, nft.decimals),
                         accessType: 'dispenser',
-                        status: 'active'
+                        status: 'active',
+                        datatokenAddress: datatokenAddress
                     };
 
                     // If we have Aquarius data, enhance the NFT info while preserving transfers
@@ -226,6 +227,8 @@ router.post('/create-and-publish-nft', async (req, res) => {
     }
 });
 
+
+
 // Metadata encryption endpoint
 router.post('/encrypt-metadata', async (req, res) => {
     try {
@@ -318,7 +321,7 @@ router.post('/encrypt-metadata', async (req, res) => {
         // Set up transaction for setMetaData
         const nftInterface = new ethers.utils.Interface(nftAbi);
         const txData = nftInterface.encodeFunctionData("setMetaData", [
-            0,                                               // _metaDataState
+            3,                                               // _metaDataState
             oceanConfig.providerUri,                         // _metaDataDecryptorUrl
             '0x123',                                        // _metaDataDecryptorAddress
             '0x02',                                         // flags
@@ -356,4 +359,84 @@ router.post('/encrypt-metadata', async (req, res) => {
     }
 });
 
+
+
+router.post('/prepare-nft-delete', async (req, res) => {
+    try {
+        const { nftAddress, userAddress } = req.body;
+        const oceanConfig = await initializeOcean();
+        const provider = new ethers.providers.JsonRpcProvider(oceanConfig.nodeUri);
+        
+        // Fetch current DDO from Aquarius to maintain consistency
+        const did = calculateDID(nftAddress, oceanConfig.chainId);
+        const aquarius = new Aquarius(oceanConfig.metadataCacheUri);
+        const currentDDO = await aquarius.resolve(did);
+        
+        if (!currentDDO) {
+            throw new Error('Could not fetch current DDO from Aquarius');
+        }
+
+        // Mark the DDO as deleted
+        currentDDO.metadata.status = 'deleted';
+        currentDDO.metadata.state = 3;  // Add explicit state
+        
+        // Encrypt the updated DDO
+        const encryptedDDO = await ProviderInstance.encrypt(
+            currentDDO,
+            oceanConfig.chainId,
+            oceanConfig.providerUri
+        );
+
+        // Calculate metadata hash from the original DDO
+        const metadataHash = getHash(JSON.stringify(currentDDO));
+        
+        // Create the transaction data for setMetaData
+        const nftInterface = new ethers.utils.Interface(nftAbi);
+        const txData = nftInterface.encodeFunctionData("setMetaData", [
+            3,                          // _metaDataState (0 for deletion)
+            "https://v4.provider.oceanprotocol.com",    // _metaDataDecryptorUrl
+            "0x123",                    // _metaDataDecryptorAddress (matching working example)
+            '0x02',                     // flags
+            encryptedDDO,              // encrypted DDO data
+            `0x${metadataHash}`,       // _metaDataHash
+            []                         // additionalParams
+        ]);
+
+        // Estimate gas
+        const gasEstimate = await provider.estimateGas({
+            to: nftAddress,
+            data: txData,
+            from: userAddress
+        });
+
+        // Add 20% buffer to gas estimate
+        const gasLimitHex = '0x' + gasEstimate.mul(12).div(10).toHexString().slice(2);
+
+        res.json({
+            success: true,
+            transaction: {
+                to: nftAddress,
+                data: txData,
+                gasLimit: gasLimitHex
+            }
+        });
+    } catch (error) {
+        console.error('Error preparing NFT deletion:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+
+
+
+
+
+
+
+
+
 module.exports = router;
+
+
+
+
