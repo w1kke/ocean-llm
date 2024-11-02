@@ -8,8 +8,13 @@ const ERC20_ABI = [
     "function decimals() view returns (uint8)"
 ];
 
-// Token Tracker specific ABI
-const TOKEN_TRACKER_ABI = [
+// Initial contract ABI to get token list
+const INITIAL_ABI = [
+    "function getTokensList() view returns (address[])"
+];
+
+// Token contract ABI to check dispensers
+const TOKEN_CONTRACT_ABI = [
     "function getDispensers() view returns (address[])"
 ];
 
@@ -19,29 +24,85 @@ class TokenFetcher {
         this.dispenserAddress = dispenserAddress;
     }
 
-    async isDatatoken(tokenAddress) {
-        try {
-            // First check if it's a contract
-            const code = await this.provider.getCode(tokenAddress);
-            if (code === '0x') return false; // Not a contract
+    async findNFTForToken(tokenAddress) {
+        console.log('\n=== Analyzing Token ===');
+        console.log('Initial Token Address:', tokenAddress);
+        console.log('Expected Dispenser Address:', this.dispenserAddress);
 
-            const contract = new ethers.Contract(tokenAddress, TOKEN_TRACKER_ABI, this.provider);
+        try {
+            // Get contract code
+            const code = await this.provider.getCode(tokenAddress);
+            console.log('Contract Code Length:', code.length);
+            console.log('Is Contract:', code !== '0x');
+
+            if (code === '0x') {
+                console.log('Not a contract, skipping...');
+                return null;
+            }
+
+            // First try to get the tokens list
+            const initialContract = new ethers.Contract(tokenAddress, INITIAL_ABI, this.provider);
             
             try {
-                // Get dispensers from the contract
-                const dispensers = await contract.getDispensers();
-                
-                // Check if the Ocean Protocol dispenser address is in the returned dispensers
-                return dispensers && dispensers.some(dispenser => 
-                    dispenser.toLowerCase() === this.dispenserAddress.toLowerCase()
-                );
+                console.log('Checking getTokensList()...');
+                const tokensList = await initialContract.getTokensList();
+                console.log('Tokens List:', tokensList);
+
+                // For each token in the list, check if it has the dispenser
+                for (const nftAddress of tokensList) {
+                    console.log('\nChecking token contract:', nftAddress);
+                    
+                    const nftContract = new ethers.Contract(
+                        nftAddress,
+                        TOKEN_CONTRACT_ABI,
+                        this.provider
+                    );
+
+                    try {
+                        const dispensers = await nftContract.getDispensers();
+                        console.log('Dispensers from token contract:', dispensers);
+
+                        // Check if our dispenser is in the list
+                        const hasOceanDispenser = dispensers.some(dispenser => 
+                            dispenser.toLowerCase() === this.dispenserAddress.toLowerCase()
+                        );
+                        console.log('Has Ocean Dispenser:', hasOceanDispenser);
+
+                        if (hasOceanDispenser) {
+                            // Get token information
+                            try {
+                                const erc20Contract = new ethers.Contract(nftAddress, ERC20_ABI, this.provider);
+                                const [name, symbol] = await Promise.all([
+                                    erc20Contract.name(),
+                                    erc20Contract.symbol()
+                                ]);
+
+                                return {
+                                    address: nftAddress,
+                                    name,
+                                    symbol,
+                                    initialTokenAddress: tokenAddress
+                                };
+                            } catch (error) {
+                                console.log('Error getting token info:', error.message);
+                                return {
+                                    address: nftAddress,
+                                    initialTokenAddress: tokenAddress
+                                };
+                            }
+                        }
+                    } catch (error) {
+                        console.log('Error checking dispensers:', error.message);
+                    }
+                }
             } catch (error) {
-                // If getDispensers() fails, it's not a datatoken
-                return false;
+                console.log('Error getting tokens list:', error.message);
             }
+
+            return null;
         } catch (error) {
-            console.error(`Error checking if ${tokenAddress} is a datatoken:`, error);
-            return false;
+            console.error(`Error analyzing token ${tokenAddress}:`, error);
+            return null;
         }
     }
 
@@ -89,26 +150,33 @@ class TokenFetcher {
 
             // Get unique token addresses from transfer events
             const tokenAddresses = new Set(events.map(event => event.address));
+            console.log('\nFound', tokenAddresses.size, 'unique token addresses');
             
-            // Check each token if it's a datatoken and get its balance
+            // Find tokens for each address
             const tokens = await Promise.all(
-                Array.from(tokenAddresses).map(async (tokenAddress) => {
-                    const isDatatoken = await this.isDatatoken(tokenAddress);
-                    if (isDatatoken) {
-                        return await this.getTokenBalance(tokenAddress, walletAddress);
-                    }
-                    return null;
+                Array.from(tokenAddresses).map(tokenAddress => 
+                    this.findNFTForToken(tokenAddress)
+                )
+            );
+
+            // Filter out null values and get balances
+            const validTokens = tokens.filter(token => token !== null);
+            const tokensWithBalances = await Promise.all(
+                validTokens.map(async (token) => {
+                    const balance = await this.getTokenBalance(token.address, walletAddress);
+                    return {
+                        ...token,
+                        balance: balance ? balance.balance : '0',
+                        decimals: balance ? balance.decimals : 18
+                    };
                 })
             );
 
-            // Filter out null values and format the response
-            const datatokens = tokens.filter(token => token !== null);
-
             return {
-                datatokens,
-                message: datatokens.length > 0 
-                    ? `Found ${datatokens.length} datatokens`
-                    : 'No datatokens found'
+                tokens: tokensWithBalances,
+                message: tokensWithBalances.length > 0 
+                    ? `Found ${tokensWithBalances.length} tokens`
+                    : 'No tokens found'
             };
         } catch (error) {
             console.error('Error in getTokensAndTransfers:', error);
