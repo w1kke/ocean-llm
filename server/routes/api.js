@@ -13,23 +13,27 @@ router.get('/nft-access/:address/:chainId', async (req, res) => {
         const oceanConfig = await initializeOcean();
         const provider = new ethers.providers.JsonRpcProvider(oceanConfig.nodeUri);
         
-        // Create TokenFetcher with the Ocean Protocol dispenser address
         const tokenFetcher = new TokenFetcher(provider, oceanConfig.dispenserAddress);
-        const tokenData = await tokenFetcher.getTokensAndTransfers(address);
+        const result = await tokenFetcher.getTokensAndTransfers(address);
 
-        // For each confirmed datatoken, fetch additional NFT information from the subgraph
+        // For each NFT, fetch additional information from the subgraph
         const nftInfo = await Promise.all(
-            tokenData.datatokens.map(async (token) => {
+            result.tokens.map(async (nft) => {
                 try {
                     // Query the subgraph for NFT information
                     const subgraphUrl = oceanConfig.subgraphUri;
                     const query = `
                         {
-                            datatokens(where: {id: "${token.address.toLowerCase()}"}) {
-                                nft {
+                            nft(id: "${nft.address.toLowerCase()}") {
+                                symbol
+                                name
+                                owner {
                                     id
-                                    symbol
-                                    name
+                                }
+                                created
+                                nftData {
+                                    metadataState
+                                    metadataDecryptorUrl
                                 }
                             }
                         }
@@ -42,38 +46,53 @@ router.get('/nft-access/:address/:chainId', async (req, res) => {
                     });
 
                     const data = await response.json();
-                    if (data.errors) throw new Error(data.errors[0].message);
+                    
+                    // Even if we don't get subgraph data, return the token as an NFT
+                    // since it's been verified by TokenFetcher
+                    const baseNftInfo = {
+                        ...nft,
+                        did: calculateDID(nft.address, chainId),
+                        currentBalance: ethers.utils.formatUnits(nft.balance, nft.decimals),
+                        accessType: 'dispenser',  // Add this to indicate it's a dispenser-based access
+                        status: 'active'  // Add this to show it's an active token
+                    };
 
-                    // Check if we got valid data back
-                    if (!data.data?.datatokens?.[0]?.nft) {
-                        console.warn(`No NFT data found for datatoken ${token.address}`);
-                        return null;
+                    // If we have subgraph data, enhance the NFT info
+                    if (data.data?.nft) {
+                        const nftData = data.data.nft;
+                        return {
+                            ...baseNftInfo,
+                            name: nftData.name || nft.name,
+                            symbol: nftData.symbol || nft.symbol,
+                            owner: nftData.owner?.id,
+                            created: nftData.created,
+                            metadataState: nftData.nftData?.metadataState,
+                            metadataUrl: nftData.nftData?.metadataDecryptorUrl
+                        };
                     }
 
-                    const nft = data.data.datatokens[0].nft;
-                    return {
-                        datatokenAddress: token.address,
-                        nftAddress: nft.id,
-                        name: nft.name,
-                        symbol: nft.symbol,
-                        did: calculateDID(nft.id, chainId),
-                        currentBalance: ethers.utils.formatUnits(token.balance, token.decimals),
-                        accessType: token.balance > 0 ? 'Available' : 'Spent'
-                    };
+                    // If no subgraph data, return the base NFT info
+                    console.log(`Using token data for NFT ${nft.address}`);
+                    return baseNftInfo;
+
                 } catch (error) {
-                    console.error(`Error fetching NFT info for datatoken ${token.address}:`, error);
-                    return null;
+                    console.error(`Error fetching NFT info for ${nft.address}:`, error);
+                    // Still return the token as an NFT even if there's an error
+                    return {
+                        ...nft,
+                        did: calculateDID(nft.address, chainId),
+                        currentBalance: ethers.utils.formatUnits(nft.balance, nft.decimals),
+                        accessType: 'dispenser',
+                        status: 'active'
+                    };
                 }
             })
         );
 
-        // Filter out any failed queries
-        const validNftInfo = nftInfo.filter(info => info !== null);
-
         res.json({
             success: true,
-            accessibleNfts: validNftInfo,
-            message: tokenData.message
+            accessibleNfts: nftInfo.filter(nft => parseFloat(nft.currentBalance) > 0),  // Only show NFTs with balance
+            message: `Found ${nftInfo.length} accessible NFTs`
         });
 
     } catch (error) {
