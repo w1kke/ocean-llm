@@ -4,8 +4,83 @@ const { handleFileUpload } = require('../ipfs');
 const { generateMetadata, generateAndUploadPreviewImage, fetchUserAssets } = require('../metadata');
 const { nftAbi, initializeOcean, calculateDID, ZERO_ADDRESS, NftFactory, ProviderInstance, Aquarius, getHash, ethers } = require('../ocean');
 const { debug } = require('../config');
+const TokenFetcher = require('../tokenfetcher');
 
+// NFT Access endpoint
+router.get('/nft-access/:address/:chainId', async (req, res) => {
+    try {
+        const { address, chainId } = req.params;
+        const oceanConfig = await initializeOcean();
+        const provider = new ethers.providers.JsonRpcProvider(oceanConfig.nodeUri);
+        
+        // Create TokenFetcher with the Ocean Protocol dispenser address
+        const tokenFetcher = new TokenFetcher(provider, oceanConfig.dispenserAddress);
+        const tokenData = await tokenFetcher.getTokensAndTransfers(address);
 
+        // For each confirmed datatoken, fetch additional NFT information from the subgraph
+        const nftInfo = await Promise.all(
+            tokenData.datatokens.map(async (token) => {
+                try {
+                    // Query the subgraph for NFT information
+                    const subgraphUrl = oceanConfig.subgraphUri;
+                    const query = `
+                        {
+                            datatokens(where: {id: "${token.address.toLowerCase()}"}) {
+                                nft {
+                                    id
+                                    symbol
+                                    name
+                                }
+                            }
+                        }
+                    `;
+
+                    const response = await fetch(subgraphUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ query })
+                    });
+
+                    const data = await response.json();
+                    if (data.errors) throw new Error(data.errors[0].message);
+
+                    // Check if we got valid data back
+                    if (!data.data?.datatokens?.[0]?.nft) {
+                        console.warn(`No NFT data found for datatoken ${token.address}`);
+                        return null;
+                    }
+
+                    const nft = data.data.datatokens[0].nft;
+                    return {
+                        datatokenAddress: token.address,
+                        nftAddress: nft.id,
+                        name: nft.name,
+                        symbol: nft.symbol,
+                        did: calculateDID(nft.id, chainId),
+                        currentBalance: ethers.utils.formatUnits(token.balance, token.decimals),
+                        accessType: token.balance > 0 ? 'Available' : 'Spent'
+                    };
+                } catch (error) {
+                    console.error(`Error fetching NFT info for datatoken ${token.address}:`, error);
+                    return null;
+                }
+            })
+        );
+
+        // Filter out any failed queries
+        const validNftInfo = nftInfo.filter(info => info !== null);
+
+        res.json({
+            success: true,
+            accessibleNfts: validNftInfo,
+            message: tokenData.message
+        });
+
+    } catch (error) {
+        console.error('Error fetching NFT access:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 // File upload endpoint
 router.post('/upload', handleFileUpload);
@@ -125,7 +200,7 @@ router.post('/create-and-publish-nft', async (req, res) => {
 // Metadata encryption endpoint
 router.post('/encrypt-metadata', async (req, res) => {
     try {
-        const { nftAddress, datatokenAddress, dispenserAddress, metadata, chainId, publisherAddress } = req.body;
+        const { nftAddress, datatokenAddress, metadata, chainId, publisherAddress } = req.body;
 
         if (!nftAddress || !metadata || !chainId || !publisherAddress) {
             throw new Error('Missing required parameters');

@@ -22,7 +22,6 @@ async function generateMetadata(prompt, userPrice = null) {
             "author": "Generated author name",
             "tags": ["array", "of", "relevant", "descriptive", "tags"],
             "category": "Primary category of the NFT",
-            "suggestedPrice": "Suggested price for datatoken in Ocean tokens number only",
             "imagePrompt": "Detailed prompt for DALL-E to generate a preview image"
         }`),
         new HumanMessage(`Create detailed NFT metadata for this concept: ${prompt}`)

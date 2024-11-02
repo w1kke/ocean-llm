@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ocean AI NFT Creator</title>
     <link href="/css/styles.css" rel="stylesheet">
+    <link href="/css/modules/nftAccess.css" rel="stylesheet">
 </head>
 <body>
     <div class="main-container">
@@ -20,6 +21,8 @@
             <div class="window-body">
                 <div class="toolbar">
                     <button id="walletConnectBtn" class="btn">Connect Wallet</button>
+                    <button id="walletDisconnectBtn" class="btn" disabled>⏏ Disconnect</button>
+                    <button onclick="window.showNFTAccessWindow()" class="btn" id="nftAccessBtn">View NFT Access</button>
                 </div>
                 <div class="chat-container">
                     <div id="messages" class="messages"></div>
@@ -80,6 +83,7 @@
     <script src="/js/modules/friends.js"></script>
     <script src="/js/modules/assets.js"></script>
     <script src="/js/modules/nft.js"></script>
+    <script src="/js/modules/nftAccess.js"></script>
     
     <!-- Load main chat script last -->
     <script src="/js/chat.js"></script>

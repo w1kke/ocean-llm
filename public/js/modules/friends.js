@@ -42,12 +42,17 @@ function addFriend() {
         return;
     }
     
-    if (address === window.userAddress) {
+    // Normalize addresses for comparison
+    const normalizedAddress = address.toLowerCase();
+    const normalizedUserAddress = window.userAddress ? window.userAddress.toLowerCase() : '';
+    
+    if (normalizedAddress === normalizedUserAddress) {
         alert('You cannot add your own address');
         return;
     }
     
-    if (friends.includes(address)) {
+    // Check if address is already in friends list (case-insensitive)
+    if (friends.some(friend => friend.toLowerCase() === normalizedAddress)) {
         alert('This address is already in your friends list');
         return;
     }

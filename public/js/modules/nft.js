@@ -128,7 +128,7 @@ async function proceedWithNftCreation() {
             ? parseInt(gasLimit, 16)
             : Number(gasLimit);
 
-        // Prepare first transaction using web3.js
+        // Prepare first transaction
         const txToSend = {
             to: createData.txData.to,
             from: window.userAddress,
@@ -146,11 +146,9 @@ async function proceedWithNftCreation() {
         console.log('receipt logs:', receipt.logs);
         const nftAddress = receipt.logs[2].address; // The third log contains the NFT address
         const datatokenAddress = receipt.logs[7].address;
-        const dispenserAddress = receipt.logs[13].address;
 
         console.log(nftAddress);
         console.log(datatokenAddress);
-        console.log(dispenserAddress);
 
         document.getElementById('nftResult').textContent = 'Preparing metadata encryption...';
 
@@ -164,7 +162,6 @@ async function proceedWithNftCreation() {
             body: JSON.stringify({
                 nftAddress,
                 datatokenAddress,
-                dispenserAddress,
                 metadata: createData.metadata,
                 chainId,
                 publisherAddress: window.userAddress
@@ -182,7 +179,7 @@ async function proceedWithNftCreation() {
             ? parseInt(gasLimit2, 16)
             : Number(gasLimit2);
 
-        // Prepare second transaction using web3.js
+        // Prepare second transaction
         const tx2ToSend = {
             to: encryptData.transaction.to,
             from: window.userAddress,
@@ -211,4 +208,3 @@ async function proceedWithNftCreation() {
 
 // Export functions
 window.createNft = createNft;
-window.proceedWithNftCreation = proceedWithNftCreation;

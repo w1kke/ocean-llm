@@ -183,9 +183,6 @@ async function shareAccess() {
 
         // Close the dialog
         closeShareDialog();
-        
-        // Show success message
-        alert('NFT access has been shared successfully!');
 
     } catch (error) {
         console.error('Error sharing NFT access:', error);
