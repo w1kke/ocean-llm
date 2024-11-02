@@ -51,7 +51,7 @@ async function fetchAndDisplayAssets() {
                         <p><strong>NFT Address:</strong> ${assetData.nft.address}</p>
                         <p><strong>Datatoken:</strong> ${assetData.datatokens[0].symbol}</p>
                         <div class="button-bar">
-                            <button onclick="window.showShareDialog('${assetData.nft.address}')" class="share-btn">
+                            <button onclick="window.showShareDialog('${assetData.nft.address}', '${assetData.datatokens[0].address}')" class="share-btn">
                                 Share Access
                             </button>
                             <button onclick="window.open('${marketUrl}', '_blank')" class="market-btn">
@@ -76,8 +76,8 @@ async function fetchAndDisplayAssets() {
     }
 }
 
-function showShareDialog(nftAddress) {
-    selectedNFTForSharing = nftAddress;
+function showShareDialog(nftAddress, datatokenAddress) {
+    selectedNFTForSharing = { nftAddress, datatokenAddress };
     
     // Create overlay
     const overlay = document.createElement('div');
@@ -138,62 +138,45 @@ async function shareAccess() {
     const friendAddress = selectedFriend.querySelector('input[type="hidden"]').value;
     
     try {
-        // First Transaction: Mint datatoken
-        const nftContract = new window.web3.eth.Contract([
-            {
-                "inputs": [],
-                "name": "mint",
-                "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
-                "stateMutability": "nonpayable",
-                "type": "function"
-            },
-            {
-                "inputs": [{"internalType": "address", "name": "to", "type": "address"}, {"internalType": "uint256", "name": "tokenId", "type": "uint256"}],
-                "name": "transfer",
-                "outputs": [],
-                "stateMutability": "nonpayable",
-                "type": "function"
-            }
-        ], selectedNFTForSharing);
-
         // Show status in the UI
         const statusDiv = document.createElement('div');
         statusDiv.className = 'transaction-status';
         statusDiv.innerHTML = `
             <div id="mintStatus" class="tx-status">
-                <span class="tx-label">Minting Datatoken:</span>
+                <span class="tx-label">Sharing Access:</span>
                 <span class="tx-state waiting">Waiting for approval...</span>
-            </div>
-            <div id="transferStatus" class="tx-status">
-                <span class="tx-label">Transferring Token:</span>
-                <span class="tx-state waiting">Waiting to start...</span>
             </div>
         `;
         document.querySelector('.share-dialog .window-body').appendChild(statusDiv);
 
-        // Mint new datatoken
-        const mintTx = await nftContract.methods.mint().send({
-            from: window.userAddress,
-            gas: await nftContract.methods.mint().estimateGas({ from: window.userAddress })
+        // Get the datatoken contract ABI
+        const datatokenAbi = [
+            {
+                "inputs": [
+                    { "internalType": "address", "name": "account", "type": "address" },
+                    { "internalType": "uint256", "name": "amount", "type": "uint256" }
+                ],
+                "name": "mint",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            }
+        ];
+
+        // Create contract instance for the datatoken
+        const datatokenContract = new window.web3.eth.Contract(
+            datatokenAbi,
+            selectedNFTForSharing.datatokenAddress
+        );
+
+        // Mint 1 datatoken (using 18 decimals, so 1 = 1000000000000000000)
+        const amount = '1000000000000000000';
+        const mintTx = await datatokenContract.methods.mint(friendAddress, amount).send({
+            from: window.userAddress
         });
 
-        // Update mint status
-        window.updateTransactionStatus('mintStatus', 'success', 'Minted successfully!');
-
-        // Get the token ID from the mint transaction
-        const tokenId = mintTx.events.Transfer.returnValues.tokenId;
-
-        // Update transfer status
-        window.updateTransactionStatus('transferStatus', 'pending', 'Waiting for approval...');
-
-        // Second Transaction: Transfer datatoken to friend
-        await nftContract.methods.transfer(friendAddress, tokenId).send({
-            from: window.userAddress,
-            gas: await nftContract.methods.transfer(friendAddress, tokenId).estimateGas({ from: window.userAddress })
-        });
-
-        // Update transfer status
-        window.updateTransactionStatus('transferStatus', 'success', 'Transferred successfully!');
+        // Update status
+        window.updateTransactionStatus('mintStatus', 'success', 'Access shared successfully!');
 
         // Wait for 2 seconds to show success status before closing
         await new Promise(resolve => setTimeout(resolve, 2000));

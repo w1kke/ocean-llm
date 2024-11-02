@@ -56,7 +56,7 @@ router.post('/create-and-publish-nft', async (req, res) => {
             templateIndex: 1,
             strings: [metadata.datatokenName, metadata.datatokenSymbol],
             addresses: [
-                checksummedUserAddress,          // Minter
+                checksummedUserAddress,          // Minter - only the creator can mint tokens
                 ZERO_ADDRESS,          // Payment collector
                 ZERO_ADDRESS,          // Fee address
                 oceanConfig.oceanTokenAddress    // Base token
@@ -72,8 +72,8 @@ router.post('/create-and-publish-nft', async (req, res) => {
             dispenserAddress: oceanConfig.dispenserAddress,
             maxTokens: ethers.utils.parseUnits('1000', 18).toString(),
             maxBalance: ethers.utils.parseUnits('100', 18).toString(),
-            withMint: true,
-            allowedSwapper: ZERO_ADDRESS
+            withMint: false,  // Disable public minting through dispenser
+            allowedSwapper: checksummedUserAddress  // Only creator can use dispenser
         };
 
         console.log("NFT Params:", nftParams);
