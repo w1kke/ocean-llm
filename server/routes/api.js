@@ -17,6 +17,8 @@ router.get('/nft-access/:address/:chainId', async (req, res) => {
         const tokenFetcher = new TokenFetcher(provider, oceanConfig.dispenserAddress);
         const result = await tokenFetcher.getTokensAndTransfers(address);
 
+        console.log('Raw tokens from TokenFetcher:', result.tokens);
+
         // For each NFT, fetch additional information from Aquarius
         const nftInfo = await Promise.all(
             result.tokens.map(async (nft) => {
@@ -28,9 +30,9 @@ router.get('/nft-access/:address/:chainId', async (req, res) => {
                     const aquariusResponse = await fetch('https://v4.aquarius.oceanprotocol.com/api/aquarius/assets/ddo/' + did);
                     const aquariusData = await aquariusResponse.json();
                     
-                    // Base NFT info
+                    // Base NFT info - preserve transfers from original token data
                     const baseNftInfo = {
-                        ...nft,
+                        ...nft,  // This includes the transfers array
                         nftAddress: nftAddress,
                         did: did,
                         currentBalance: ethers.utils.formatUnits(nft.balance, nft.decimals),
@@ -38,10 +40,10 @@ router.get('/nft-access/:address/:chainId', async (req, res) => {
                         status: 'active'
                     };
 
-                    // If we have Aquarius data, enhance the NFT info
+                    // If we have Aquarius data, enhance the NFT info while preserving transfers
                     if (aquariusData && !aquariusData.error) {
                         return {
-                            ...baseNftInfo,
+                            ...baseNftInfo,  // This preserves the transfers array
                             name: aquariusData.metadata.name,
                             symbol: aquariusData.metadata.symbol,
                             description: aquariusData.metadata.description,
@@ -57,15 +59,15 @@ router.get('/nft-access/:address/:chainId', async (req, res) => {
                         };
                     }
 
-                    // If no Aquarius data, return the base NFT info
+                    // If no Aquarius data, return the base NFT info (which includes transfers)
                     console.log(`Using basic token data for NFT ${nft.address}`);
                     return baseNftInfo;
 
                 } catch (error) {
                     console.error(`Error fetching NFT info for ${nft.address}:`, error);
-                    // Still return the token as an NFT even if there's an error
+                    // Still return the token as an NFT even if there's an error, preserving transfers
                     return {
-                        ...nft,
+                        ...nft,  // This preserves the transfers array
                         nftAddress: nft.erc721Address || nft.address,
                         did: calculateDID(nft.erc721Address || nft.address, chainId),
                         currentBalance: ethers.utils.formatUnits(nft.balance, nft.decimals),
@@ -76,10 +78,31 @@ router.get('/nft-access/:address/:chainId', async (req, res) => {
             })
         );
 
+        // Debug log to check NFT info
+        console.log('Processed NFT info:', nftInfo.map(nft => ({
+            address: nft.address,
+            balance: nft.currentBalance,
+            transfersCount: nft.transfers ? nft.transfers.length : 0
+        })));
+
+        // Show all NFTs that either:
+        // 1. Have a balance > 0 (unused datatokens)
+        // 2. Have transfers > 0 (spent datatokens)
+        const accessibleNfts = nftInfo.filter(nft => {
+            const hasBalance = parseFloat(nft.currentBalance) > 0;
+            const hasTransfers = nft.transfers && nft.transfers.length > 0;
+            const isAccessible = hasBalance || hasTransfers;
+            
+            // Debug log for filtering decision
+            console.log(`NFT ${nft.address} - Balance: ${nft.currentBalance}, Transfers: ${nft.transfers ? nft.transfers.length : 0}, Accessible: ${isAccessible}`);
+            
+            return isAccessible;
+        });
+
         res.json({
             success: true,
-            accessibleNfts: nftInfo.filter(nft => parseFloat(nft.currentBalance) > 0),  // Only show NFTs with balance
-            message: `Found ${nftInfo.length} accessible NFTs`
+            accessibleNfts: accessibleNfts,
+            message: `Found ${accessibleNfts.length} accessible NFTs`
         });
 
     } catch (error) {

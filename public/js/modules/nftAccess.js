@@ -53,8 +53,8 @@ async function showNFTAccessWindow() {
             return;
         }
 
-        // Log the number of NFTs for debugging
-        console.log(`Displaying ${data.accessibleNfts.length} NFTs`);
+        // Log the raw NFT data for debugging
+        console.log('Raw NFT data:', data.accessibleNfts);
 
         // Display the NFTs in a grid layout similar to assets
         contentDiv.innerHTML = `
@@ -63,49 +63,73 @@ async function showNFTAccessWindow() {
             </div>
             
             <div class="nft-access-grid">
-                ${data.accessibleNfts.map(nft => {
-                    // Log each NFT for debugging
-                    console.log('Processing NFT:', nft);
+                ${data.accessibleNfts.map((nft, index) => {
+                    // Log each NFT processing attempt
+                    console.log(`Processing NFT ${index + 1}/${data.accessibleNfts.length}:`, nft);
 
-                    const createdDate = nft.created ? new Date(nft.created).toLocaleString('en-US', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                    }) : 'N/A';
+                    try {
+                        const createdDate = nft.created ? new Date(nft.created).toLocaleString('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        }) : 'N/A';
 
-                    return `
-                        <div class="asset-card window">
-                            <div class="title-bar">
-                                <div class="title-bar-text">${nft.name || nft.symbol || 'Unnamed NFT'}</div>
-                                <div class="title-bar-controls">
-                                    <button aria-label="Minimize"></button>
-                                    <button aria-label="Maximize"></button>
-                                    <button aria-label="Close"></button>
+                        // Log successful NFT card creation
+                        console.log(`Successfully created card for NFT ${index + 1}`);
+
+                        return `
+                            <div class="asset-card window">
+                                <div class="title-bar">
+                                    <div class="title-bar-text">${nft.name || nft.symbol || 'Unnamed NFT'}</div>
+                                    <div class="title-bar-controls">
+                                        <button aria-label="Minimize"></button>
+                                        <button aria-label="Maximize"></button>
+                                        <button aria-label="Close"></button>
+                                    </div>
+                                </div>
+                                <div class="window-body">
+                                    <div class="asset-preview">
+                                        <img src="${nft.previewImageUrl || '/images/icq-flower.png'}" alt="NFT Preview" class="asset-image">
+                                    </div>
+                                    <p><strong>Description:</strong> ${nft.description || 'No description available'}</p>
+                                    <p><strong>Author:</strong> ${nft.author || 'Unknown'}</p>
+                                    <p><strong>Created:</strong> ${createdDate}</p>
+                                    <p><strong>NFT Address:</strong> ${nft.nftAddress}</p>
+                                    <p><strong>Current Balance:</strong> ${nft.currentBalance} tokens</p>
+                                    <p><strong>Access Status:</strong> ${parseFloat(nft.currentBalance) > 0 ? 'Has Access Token' : 'Used Access Token'}</p>
+                                    ${nft.tags ? `<p><strong>Tags:</strong> ${nft.tags.join(', ')}</p>` : ''}
+                                    <div class="button-bar">
+                                        <button onclick="window.open('https://market.oceanprotocol.com/asset/${nft.did}', '_blank')" class="market-btn">
+                                            View in Ocean Market
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="window-body">
-                                <div class="asset-preview">
-                                    <img src="${nft.previewImageUrl || '/images/icq-flower.png'}" alt="NFT Preview" class="asset-image">
+                        `;
+                    } catch (error) {
+                        // Log any errors in card creation
+                        console.error(`Error creating card for NFT ${index + 1}:`, error);
+                        return `
+                            <div class="asset-card window">
+                                <div class="title-bar">
+                                    <div class="title-bar-text">Error Loading NFT</div>
                                 </div>
-                                <p><strong>Description:</strong> ${nft.description || 'No description available'}</p>
-                                <p><strong>Author:</strong> ${nft.author || 'Unknown'}</p>
-                                <p><strong>Created:</strong> ${createdDate}</p>
-                                <p><strong>NFT Address:</strong> ${nft.nftAddress}</p>
-                                <p><strong>Current Balance:</strong> ${nft.currentBalance} tokens</p>
-                                ${nft.tags ? `<p><strong>Tags:</strong> ${nft.tags.join(', ')}</p>` : ''}
-                                <div class="button-bar">
-                                    <button onclick="window.open('https://market.oceanprotocol.com/asset/${nft.did}', '_blank')" class="market-btn">
-                                        View in Ocean Market
-                                    </button>
+                                <div class="window-body">
+                                    <p>Error loading NFT information: ${error.message}</p>
+                                    <p>NFT Address: ${nft.nftAddress || 'Unknown'}</p>
                                 </div>
                             </div>
-                        </div>
-                    `;
+                        `;
+                    }
                 }).join('')}
             </div>
         `;
+
+        // Log final rendered count
+        const renderedCards = accessWindow.querySelectorAll('.asset-card');
+        console.log(`Rendered ${renderedCards.length} NFT cards out of ${data.accessibleNfts.length} total NFTs`);
 
     } catch (error) {
         console.error('Error fetching NFT access:', error);
