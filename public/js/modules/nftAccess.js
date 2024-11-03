@@ -91,7 +91,7 @@ async function showNFTAccessWindow() {
                                 </div>
                                 <div class="window-body">
                                     <div class="asset-preview">
-                                        <img src="${nft.previewImageUrl || '/images/icq-flower.png'}" alt="NFT Preview" class="asset-image">
+                                        <img src="${nft.previewImageUrl || '/images/ImageNotFound.png'}" alt="NFT Preview" class="asset-image">
                                     </div>
                                     <p><strong>Description:</strong> ${nft.description || 'No description available'}</p>
                                     <p><strong>Author:</strong> ${nft.author || 'Unknown'}</p>

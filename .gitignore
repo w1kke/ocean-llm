@@ -8,3 +8,6 @@ npm-debug.log*
 
 # Environment files
 .env
+
+# MacOS artefacts
+.DS_Store

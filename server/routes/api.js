@@ -23,7 +23,8 @@ router.get('/nft-access/:address/:chainId', async (req, res) => {
         const nftInfo = await Promise.all(
             result.tokens.map(async (nft) => {
                 try {
-                    const nftAddress = nft.erc721Address || nft.address;
+                    const nftAddress = nft.erc721Address;
+                    console.log(nftAddress);
                     const did = calculateDID(nftAddress, chainId);
 
                     // Fetch metadata from Aquarius
@@ -69,8 +70,8 @@ router.get('/nft-access/:address/:chainId', async (req, res) => {
                     // Still return the token as an NFT even if there's an error, preserving transfers
                     return {
                         ...nft,  // This preserves the transfers array
-                        nftAddress: nft.erc721Address || nft.address,
-                        did: calculateDID(nft.erc721Address || nft.address, chainId),
+                        nftAddress: nft.erc721Address,
+                        did: calculateDID(nft.erc721Address, chainId),
                         currentBalance: ethers.utils.formatUnits(nft.balance, nft.decimals),
                         accessType: 'dispenser',
                         status: 'active'

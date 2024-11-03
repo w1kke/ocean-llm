@@ -43,7 +43,7 @@ async function fetchAndDisplayAssets() {
                     </div>
                     <div class="window-body">
                         <div class="asset-preview">
-                            <img src="${assetData.metadata.previewImageUrl || '/images/icq-flower.png'}" alt="NFT Preview" class="asset-image">
+                            <img src="${assetData.metadata.previewImageUrl || '/images/NoImageFound.png'}" alt="NFT Preview" class="asset-image">
                         </div>
                         <p><strong>Description:</strong> ${assetData.metadata.description}</p>
                         <p><strong>Author:</strong> ${assetData.metadata.author}</p>

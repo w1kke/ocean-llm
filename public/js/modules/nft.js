@@ -18,24 +18,8 @@ async function createNft(prompt, file) {
 
     window.addMessage(prompt, true);
     document.getElementById('createNftBtn').disabled = true;
-    document.getElementById('nftResult').textContent = '📤 Uploading file to IPFS...';
 
     try {
-        // First upload the file
-        const formData = new FormData();
-        formData.append('file', file);
-
-        const uploadResponse = await fetch('/api/upload', {
-            method: 'POST',
-            body: formData
-        });
-
-        const uploadData = await uploadResponse.json();
-        if (!uploadData.success) {
-            throw new Error(uploadData.error || 'Failed to upload file');
-        }
-
-        const ipfsUrl = uploadData.ipfsUrl;
         document.getElementById('nftResult').textContent = '🤖 AI is working... Generating metadata...';
 
         // Then create the NFT with the IPFS URL
