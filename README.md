@@ -1,5 +1,6 @@
-# Ocean98
 # Ocean98: Extensible Retro-Styled Decentralized Social Experience
+
+![Ocean98 logo](logo/logo.png)
 
 ## Project Overview
 Ocean98 reimagines privacy-first social networking through a nostalgic Windows 98-inspired interface. By combining blockchain technology with retro computing aesthetics, we've created a unique platform that makes decentralized data sharing both secure and intuitive. The environment grows through user-created applications and media tools, all powered by Ocean Protocol DataNFT technology.
