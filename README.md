@@ -59,11 +59,11 @@ To install Ocean98, follow these steps:
 
 1. Clone the repository
    ```
-   git clone https://github.com/w1kke/ocean-llm.git
+   git clone https://github.com/w1kke/ocean98.git
    ```
 2. Navigate to the project directory
    ```
-   cd ocean-llm
+   cd ocean98
    ```
 3. Install the dependencies
    ```
