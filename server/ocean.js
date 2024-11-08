@@ -43,7 +43,7 @@ async function initializeOcean() {
         nftFactoryAddress: baseConfig.nftFactoryAddress,
         chainId: baseConfig.chainId,
         OPFCommunityFeeCollector: baseConfig.OPFCommunityFeeCollector,
-        FixedPrice: baseConfig.FixedPrice
+        FixedPrice: baseConfig.FixedPrice,
     };
 }
 

@@ -510,7 +510,7 @@ router.post('/consume-asset', async (req, res) => {
 
         const consumeMarketFee = {
             consumeMarketFeeAddress: "0x9984b2453eC7D99a73A5B3a46Da81f197B753C8d", // this address needs checked 
-            consumeMarketFeeToken: oceanConfig.ZERO_ADDRESS,
+            consumeMarketFeeToken: ZERO_ADDRESS,
             consumeMarketFeeAmount: 0
         };
 
