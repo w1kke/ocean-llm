@@ -430,16 +430,15 @@ router.post('/prepare-nft-delete', async (req, res) => {
 
 
 
-
 router.post('/consume-asset', async (req, res) => {
     try {
         const { nftAddress, datatokenAddress, userAddress, chainId } = req.body;
         const oceanConfig = await initializeOcean();
-        console.log('[DEBUG] Ocean Config:', oceanConfig);
         const provider = new ethers.providers.JsonRpcProvider(oceanConfig.nodeUri);
+        const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
         
         const transactions = [];
-        
+
         // Get asset details from Aquarius first
         const did = calculateDID(nftAddress, chainId);
         const aquarius = new Aquarius(oceanConfig.metadataCacheUri);
@@ -454,8 +453,41 @@ router.post('/consume-asset', async (req, res) => {
         if (!downloadService) {
             throw new Error('No download service found for this asset');
         }
-        
-        // Step 1: Dispense token transaction
+
+        // Check datatoken balance in dispenser first
+        const datatokenAbi = [
+            'function balanceOf(address account) view returns (uint256)',
+            'function mint(address account, uint256 amount)',
+            'function startOrder(address consumer, uint256 serviceIndex, tuple(address providerFeeAddress, address providerFeeToken, uint256 providerFeeAmount, uint8 v, bytes32 r, bytes32 s, uint256 validUntil, bytes providerData) _providerFee, tuple(address consumeMarketFeeAddress, address consumeMarketFeeToken, uint256 consumeMarketFeeAmount) _consumeMarketFee)'
+        ];
+
+        const datatokenContract = new ethers.Contract(
+            datatokenAddress,
+            datatokenAbi,
+            provider
+        );
+
+        const dispenserBalance = await datatokenContract.balanceOf(oceanConfig.dispenserAddress);
+        console.log('[DEBUG] Dispenser balance:', dispenserBalance.toString());
+
+        // If dispenser needs tokens, add mint transaction first
+        if (dispenserBalance.lt(ethers.utils.parseEther('1'))) {
+            console.log('[DEBUG] Adding mint transaction for dispenser');
+            const mintTx = {
+                message: 'Minting tokens to dispenser...',
+                data: {
+                    to: datatokenAddress,
+                    data: datatokenContract.interface.encodeFunctionData('mint', [
+                        oceanConfig.dispenserAddress,
+                        ethers.utils.parseEther('100') // Mint 100 tokens
+                    ]),
+                    gasLimit: '300000'
+                }
+            };
+            transactions.push(mintTx);
+        }
+
+        // Add dispense transaction
         const dispenserContract = new ethers.Contract(
             oceanConfig.dispenserAddress,
             ['function dispense(address datatoken, uint256 amount, address destination)'],
@@ -476,24 +508,13 @@ router.post('/consume-asset', async (req, res) => {
         };
         transactions.push(dispenseTx);
 
-        // Step 2: Initialize provider with correct service details
+        // Initialize provider with correct service details
         const initializeData = await ProviderInstance.initialize(
             asset.id,
             downloadService.id,
             0,
             userAddress,
             oceanConfig.providerUri
-        );
-
-        // Step 3: Start order transaction
-        const datatokenAbi = [
-            'function startOrder(address consumer, uint256 serviceIndex, tuple(address providerFeeAddress, address providerFeeToken, uint256 providerFeeAmount, uint8 v, bytes32 r, bytes32 s, uint256 validUntil, bytes providerData) _providerFee, tuple(address consumeMarketFeeAddress, address consumeMarketFeeToken, uint256 consumeMarketFeeAmount) _consumeMarketFee)'
-        ];
-
-        const datatokenContract = new ethers.Contract(
-            datatokenAddress,
-            datatokenAbi,
-            provider
         );
 
         // Construct the provider fee and consume market fee objects
@@ -509,11 +530,12 @@ router.post('/consume-asset', async (req, res) => {
         };
 
         const consumeMarketFee = {
-            consumeMarketFeeAddress: "0x9984b2453eC7D99a73A5B3a46Da81f197B753C8d", // this address needs checked 
+            consumeMarketFeeAddress: oceanConfig.consumeMarketFeeAddress || ZERO_ADDRESS,
             consumeMarketFeeToken: ZERO_ADDRESS,
             consumeMarketFeeAmount: 0
         };
 
+        // Add start order transaction
         const orderTx = {
             message: 'Starting order...',
             data: {
