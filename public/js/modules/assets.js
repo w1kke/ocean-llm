@@ -4,25 +4,25 @@ let selectedNFTForSharing = null;
 
 async function fetchAndDisplayAssets() {
     if (!window.userAddress) return;
-    
+
     try {
         // Get current chain ID
         const chainId = await window.web3.eth.getChainId();
-        
+
         const response = await fetch(`/api/user-assets/${window.userAddress}/${chainId}`);
         const data = await response.json();
-        
+
         if (data.success && data.assets.length > 0) {
             const assetsContainer = document.getElementById('userAssets');
             assetsContainer.innerHTML = '';
-            
+
             data.assets.forEach(asset => {
                 const assetData = asset._source;
                 const did = `${assetData.id || assetData.nft.address}`;
                 const marketUrl = `https://market.oceanprotocol.com/asset/${did}`;
                 const card = document.createElement('div');
                 card.className = 'asset-card window';
-                
+
                 // Format the date nicely
                 const createdDate = new Date(assetData.metadata.created).toLocaleString('en-US', {
                     year: 'numeric',
@@ -33,15 +33,15 @@ async function fetchAndDisplayAssets() {
                 });
 
                 card.innerHTML = `
-                    <div class="title-bar">
-                        <div class="title-bar-text">${assetData.metadata.name}</div>
-                        <div class="title-bar-controls">
-                            <button aria-label="Minimize"></button>
-                            <button aria-label="Maximize"></button>
-                            <button aria-label="Close"></button>
-                        </div>
+                <div class="title-bar">
+                    <div class="title-bar-text">${assetData.metadata.name}</div>
+                    <div class="title-bar-controls">
+                        <button aria-label="Minimize"></button>
+                        <button aria-label="Maximize"></button>
+                        <button aria-label="Close"></button>
                     </div>
-                    <div class="window-body">
+                </div>
+                <div class="window-body">
                         <div class="asset-preview">
                             <img src="${assetData.metadata.previewImageUrl || '/images/NoImageFound.png'}" alt="NFT Preview" class="asset-image">
                         </div>
@@ -52,19 +52,22 @@ async function fetchAndDisplayAssets() {
                         <p><strong>Datatoken:</strong> ${assetData.datatokens[0].symbol}</p>
                         <p><strong>Datatoken Address:</strong> ${assetData.datatokens[0].address}</p>
                         <div class="button-bar">
-                            <button onclick="window.showShareDialog('${assetData.nft.address}', '${assetData.datatokens[0].address}')" class="share-btn">
-                                Share Access
-                            </button>
-                            <button onclick="window.open('${marketUrl}', '_blank')" class="market-btn">
-                                View in Ocean Market
-                            </button>
-                            <button onclick="window.showDeleteConfirmation('${assetData.nft.address}', '${assetData.metadata.name}')" class="delete-btn">
-                                Delete
-                            </button>
-                        </div>
+                        <button onclick="window.openAsset('${assetData.nft.address}', '${assetData.datatokens[0].address}')" class="open-btn">
+                            Open
+                        </button>
+                        <button onclick="window.showShareDialog('${assetData.nft.address}', '${assetData.datatokens[0].address}')" class="share-btn">
+                            Share Access
+                        </button>
+                        <button onclick="window.open('${marketUrl}', '_blank')" class="market-btn">
+                            View in Ocean Market
+                        </button>
+                        <button onclick="window.showDeleteConfirmation('${assetData.nft.address}', '${assetData.metadata.name}')" class="delete-btn">
+                            Delete
+                        </button>
                     </div>
-                `;
-                
+                </div>
+            `;
+
                 assetsContainer.appendChild(card);
             });
         } else {
@@ -80,9 +83,181 @@ async function fetchAndDisplayAssets() {
     }
 }
 
+
+async function openAsset(nftAddress, datatokenAddress) {
+    try {
+        const statusDiv = document.createElement('div');
+        statusDiv.className = 'status-overlay';
+        statusDiv.innerHTML = `
+            <div class="status-window window">
+                <div class="title-bar">
+                    <div class="title-bar-text">Opening Asset</div>
+                </div>
+                <div class="window-body">
+                    <div class="transaction-status">
+                        <div id="openAssetStatus" class="tx-status">
+                            <span class="tx-label">Status:</span>
+                            <span class="tx-state waiting">Preparing...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(statusDiv);
+
+        const chainId = await window.web3.eth.getChainId();
+
+        // Step 1: Get consume transaction data
+        window.updateTransactionStatus('openAssetStatus', 'pending', 'Preparing consume transaction...');
+        const consumeResponse = await fetch('/api/consume-asset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                nftAddress,
+                datatokenAddress,
+                userAddress: window.userAddress,
+                chainId
+            })
+        });
+
+        const consumeData = await consumeResponse.json();
+        if (!consumeData.success) {
+            throw new Error(consumeData.error);
+        }
+
+        let orderTxId;
+
+        // Execute transactions in sequence and wait for confirmations
+        for (const tx of consumeData.transactions) {
+            window.updateTransactionStatus('openAssetStatus', 'pending', tx.message);
+            
+            // Send transaction
+            const txHash = await window.ethereum.request({
+                method: 'eth_sendTransaction',
+                params: [{
+                    ...tx.data,
+                    from: window.userAddress
+                }]
+            });
+
+            // Wait for transaction confirmation
+            console.log(`Waiting for transaction ${txHash} to be mined...`);
+            const receipt = await window.waitForTransaction(txHash);
+            console.log(`Transaction confirmed:`, receipt);
+
+            // Check if transaction was successful
+            if (!receipt.status) {
+                throw new Error(`Transaction failed: ${txHash}`);
+            }
+
+            // Since we know the order tx is always the last one
+            if (tx === consumeData.transactions[consumeData.transactions.length - 1]) {
+                orderTxId = receipt.transactionHash;
+                console.log(`Order transaction ID: ${orderTxId}`);
+            }
+        }
+
+        if (!orderTxId) {
+            throw new Error('Failed to get order transaction ID');
+        }
+
+        // Get download URL
+        window.updateTransactionStatus('openAssetStatus', 'pending', 'Getting download URL...');
+        const downloadResponse = await fetch('/api/get-download-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                did: consumeData.did,
+                serviceId: consumeData.serviceId,
+                orderTxId,
+                userAddress: window.userAddress,
+                fileIndex: consumeData.serviceIndex || 0
+            })
+        });
+
+        const downloadData = await downloadResponse.json();
+        if (!downloadData.success) {
+            throw new Error(downloadData.error);
+        }
+
+        // Create message to sign (did + nonce)
+        const message = downloadData.did + downloadData.nonce;
+        console.log('Message to sign:', message);
+        
+        // Get message hash using web3
+        const messageHash = window.web3.utils.soliditySha3(
+            { t: 'bytes', v: window.web3.utils.utf8ToHex(message) }
+        );
+        console.log('Message hash:', messageHash);
+
+        // Sign with MetaMask
+        const signature = await window.ethereum.request({
+            method: 'personal_sign',
+            params: [messageHash, window.userAddress]
+        });
+        console.log('Signature:', signature);
+
+        // Construct final download URL with all required parameters
+        const downloadUrl = `${downloadData.downloadUrl}?` +
+            `fileIndex=${downloadData.fileIndex}&` +
+            `documentId=${downloadData.did}&` +
+            `serviceId=${downloadData.serviceId}&` +
+            `transferTxId=${orderTxId}&` +
+            `consumerAddress=${window.userAddress}&` +
+            `nonce=${downloadData.nonce}&` +
+            `signature=${signature}`;
+
+        console.log('[DEBUG] Final Download URL:', downloadUrl);
+
+        // Start download
+        window.location.href = downloadUrl;
+
+        // Success LFG
+        window.updateTransactionStatus('openAssetStatus', 'success', 'Download started!');
+        setTimeout(() => statusDiv.remove(), 2000);
+
+    } catch (error) {
+        console.error('Error opening asset:', error);
+        const statusElement = document.querySelector('#openAssetStatus .tx-state');
+        if (statusElement) {
+            statusElement.className = 'tx-state error';
+            statusElement.textContent = 'Error: ' + error.message;
+        }
+        setTimeout(() => document.querySelector('.status-overlay')?.remove(), 3000);
+    }
+}
+
+// Helper function to wait for transaction confirmation
+async function waitForTransaction(txHash) {
+    let receipt = null;
+    while (!receipt) {
+        try {
+            receipt = await window.web3.eth.getTransactionReceipt(txHash);
+            if (!receipt) {
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before checking again
+            }
+        } catch (error) {
+            console.error('Error checking transaction:', error);
+            throw error;
+        }
+    }
+    return receipt;
+}
+
+
+// Helper function to update transaction status
+function updateTransactionStatus(statusId, state, message) {
+    const statusElement = document.querySelector(`#${statusId} .tx-state`);
+    if (statusElement) {
+        statusElement.className = `tx-state ${state}`;
+        statusElement.textContent = message;
+    }
+}
+
+
 function showShareDialog(nftAddress, datatokenAddress) {
     selectedNFTForSharing = { nftAddress, datatokenAddress };
-    
+
     // Create overlay
     const overlay = document.createElement('div');
     overlay.className = 'overlay';
@@ -101,15 +276,15 @@ function showShareDialog(nftAddress, datatokenAddress) {
         <div class="window-body">
             <p>Select a friend to share access with:</p>
             <div class="share-dialog-content" id="shareFriendsList">
-                ${window.friends && window.friends.length > 0 ? 
-                    window.friends.map(friend => `
+                ${window.friends && window.friends.length > 0 ?
+            window.friends.map(friend => `
                         <div class="share-friend-item" onclick="window.toggleFriendSelection(this, '${friend}')">
                             ${friend.slice(0, 6)}...${friend.slice(-4)}
                             <input type="hidden" value="${friend}">
                         </div>
-                    `).join('') : 
-                    '<p>No friends added yet. Add friends to share your NFT access.</p>'
-                }
+                    `).join('') :
+            '<p>No friends added yet. Add friends to share your NFT access.</p>'
+        }
             </div>
             <div class="dialog-buttons">
                 <button class="btn" onclick="window.closeShareDialog()">Cancel</button>
@@ -134,13 +309,15 @@ function toggleFriendSelection(element, friendAddress) {
     element.classList.add('selected');
 }
 
+
+
 async function shareAccess() {
     const selectedFriend = document.querySelector('.share-friend-item.selected');
     if (!selectedFriend || !selectedNFTForSharing) return;
 
     // Get the full address from the hidden input
     const friendAddress = selectedFriend.querySelector('input[type="hidden"]').value;
-    
+
     try {
         // Show status in the UI
         const statusDiv = document.createElement('div');
@@ -300,3 +477,6 @@ window.shareAccess = shareAccess;
 window.showDeleteConfirmation = showDeleteConfirmation;
 window.closeDeleteDialog = closeDeleteDialog;
 window.deleteNFT = deleteNFT;
+window.openAsset = openAsset;
+window.waitForTransaction = waitForTransaction;
+window.updateTransactionStatus = updateTransactionStatus;

@@ -6,6 +6,7 @@ const { nftAbi, initializeOcean, calculateDID, ZERO_ADDRESS, NftFactory, Provide
 const { debug } = require('../config');
 const TokenFetcher = require('../tokenfetcher');
 const fetch = require('node-fetch');
+const { Provider } = require('@oceanprotocol/lib');
 
 // NFT Access endpoint
 router.get('/nft-access/:address/:chainId', async (req, res) => {
@@ -322,7 +323,7 @@ router.post('/encrypt-metadata', async (req, res) => {
         // Set up transaction for setMetaData
         const nftInterface = new ethers.utils.Interface(nftAbi);
         const txData = nftInterface.encodeFunctionData("setMetaData", [
-            3,                                               // _metaDataState
+            0,                                               // _metaDataState
             oceanConfig.providerUri,                         // _metaDataDecryptorUrl
             '0x123',                                        // _metaDataDecryptorAddress
             '0x02',                                         // flags
@@ -430,10 +431,165 @@ router.post('/prepare-nft-delete', async (req, res) => {
 
 
 
+router.post('/consume-asset', async (req, res) => {
+    try {
+        const { nftAddress, datatokenAddress, userAddress, chainId } = req.body;
+        const oceanConfig = await initializeOcean();
+        console.log('[DEBUG] Ocean Config:', oceanConfig);
+        const provider = new ethers.providers.JsonRpcProvider(oceanConfig.nodeUri);
+        
+        const transactions = [];
+        
+        // Get asset details from Aquarius first
+        const did = calculateDID(nftAddress, chainId);
+        const aquarius = new Aquarius(oceanConfig.metadataCacheUri);
+        const asset = await aquarius.resolve(did);
+        
+        if (!asset) {
+            throw new Error('Asset not found in Aquarius');
+        }
 
+        // Find the download service
+        const downloadService = asset.services.find(s => s.type === 'access');
+        if (!downloadService) {
+            throw new Error('No download service found for this asset');
+        }
+        
+        // Step 1: Dispense token transaction
+        const dispenserContract = new ethers.Contract(
+            oceanConfig.dispenserAddress,
+            ['function dispense(address datatoken, uint256 amount, address destination)'],
+            provider
+        );
 
+        const dispenseTx = {
+            message: 'Getting tokens from dispenser...',
+            data: {
+                to: oceanConfig.dispenserAddress,
+                data: dispenserContract.interface.encodeFunctionData('dispense', [
+                    datatokenAddress,
+                    ethers.utils.parseEther('1'),
+                    userAddress
+                ]),
+                gasLimit: '300000'
+            }
+        };
+        transactions.push(dispenseTx);
 
+        // Step 2: Initialize provider with correct service details
+        const initializeData = await ProviderInstance.initialize(
+            asset.id,
+            downloadService.id,
+            0,
+            userAddress,
+            oceanConfig.providerUri
+        );
 
+        // Step 3: Start order transaction
+        const datatokenAbi = [
+            'function startOrder(address consumer, uint256 serviceIndex, tuple(address providerFeeAddress, address providerFeeToken, uint256 providerFeeAmount, uint8 v, bytes32 r, bytes32 s, uint256 validUntil, bytes providerData) _providerFee, tuple(address consumeMarketFeeAddress, address consumeMarketFeeToken, uint256 consumeMarketFeeAmount) _consumeMarketFee)'
+        ];
+
+        const datatokenContract = new ethers.Contract(
+            datatokenAddress,
+            datatokenAbi,
+            provider
+        );
+
+        // Construct the provider fee and consume market fee objects
+        const providerFee = {
+            providerFeeAddress: initializeData.providerFee.providerFeeAddress,
+            providerFeeToken: initializeData.providerFee.providerFeeToken,
+            providerFeeAmount: initializeData.providerFee.providerFeeAmount,
+            v: initializeData.providerFee.v,
+            r: initializeData.providerFee.r,
+            s: initializeData.providerFee.s,
+            validUntil: initializeData.providerFee.validUntil || 0,
+            providerData: initializeData.providerFee.providerData
+        };
+
+        const consumeMarketFee = {
+            consumeMarketFeeAddress: "0x9984b2453eC7D99a73A5B3a46Da81f197B753C8d", // this address needs checked 
+            consumeMarketFeeToken: oceanConfig.ZERO_ADDRESS,
+            consumeMarketFeeAmount: 0
+        };
+
+        const orderTx = {
+            message: 'Starting order...',
+            data: {
+                to: datatokenAddress,
+                data: datatokenContract.interface.encodeFunctionData('startOrder', [
+                    userAddress,
+                    downloadService.index || 0,
+                    providerFee,
+                    consumeMarketFee
+                ]),
+                gasLimit: '500000'
+            }
+        };
+        transactions.push(orderTx);
+
+        res.json({
+            success: true,
+            did,
+            serviceId: downloadService.id,
+            serviceIndex: downloadService.index || 0,
+            transactions,
+            providerUri: oceanConfig.providerUri
+        });
+
+    } catch (error) {
+        console.error('Error preparing consume transaction:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
+router.post('/get-download-url', async (req, res) => {
+    try {
+        const { did, serviceId, orderTxId, userAddress, fileIndex } = req.body;
+        const oceanConfig = await initializeOcean();
+        
+        // Get provider endpoints
+        const providerEndpoints = await ProviderInstance.getEndpoints(oceanConfig.providerUri);
+        const serviceEndpoints = await ProviderInstance.getServiceEndpoints(
+            oceanConfig.providerUri, 
+            providerEndpoints
+        );
+
+        // Get nonce
+        const nonce = (await ProviderInstance.getNonce(
+            oceanConfig.providerUri,
+            userAddress,
+            null,
+            providerEndpoints,
+            serviceEndpoints
+        ) + 1).toString();
+
+        // Get download URL endpoint
+        const downloadEndpoint = ProviderInstance.getEndpointURL(serviceEndpoints, 'download');
+        if (!downloadEndpoint) throw new Error('Download service not found');
+
+        res.json({
+            success: true,
+            did,
+            serviceId,
+            nonce,
+            providerUrl: oceanConfig.providerUri,
+            downloadUrl: downloadEndpoint.urlPath,
+            fileIndex
+        });
+
+    } catch (error) {
+        console.error('Error getting download URL:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
 
 
 module.exports = router;
