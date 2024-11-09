@@ -6,105 +6,94 @@ const { nftAbi, initializeOcean, calculateDID, ZERO_ADDRESS, NftFactory, Provide
 const { debug } = require('../config');
 const TokenFetcher = require('../tokenfetcher');
 const fetch = require('node-fetch');
-const { Provider } = require('@oceanprotocol/lib');
+//const { Provider } = require('@oceanprotocol/lib');
+const { hasUserPurchased, getUserOrders } = require('../subgraph');
 
-// NFT Access endpoint
+
+
 router.get('/nft-access/:address/:chainId', async (req, res) => {
     try {
         const { address, chainId } = req.params;
         const oceanConfig = await initializeOcean();
         const provider = new ethers.providers.JsonRpcProvider(oceanConfig.nodeUri);
         
+        // Initialize TokenFetcher
         const tokenFetcher = new TokenFetcher(provider, oceanConfig.dispenserAddress);
-        const result = await tokenFetcher.getTokensAndTransfers(address);
+        
+        // Batch fetch tokens and Aquarius data in parallel
+        const [tokenResult, aquariusBaseUrl] = await Promise.all([
+            tokenFetcher.getTokensAndTransfers(address),
+            'https://v4.aquarius.oceanprotocol.com/api/aquarius/assets/ddo/'
+        ]);
 
-        console.log('Raw tokens from TokenFetcher:', result.tokens);
-
-        // For each NFT, fetch additional information from Aquarius
-        const nftInfo = await Promise.all(
-            result.tokens.map(async (nft) => {
-                try {
-                    const nftAddress = nft.erc721Address;
-                    console.log(nftAddress);
-                    const did = calculateDID(nftAddress, chainId);
-
-                    // Fetch metadata from Aquarius
-                    const aquariusResponse = await fetch('https://v4.aquarius.oceanprotocol.com/api/aquarius/assets/ddo/' + did);
-                    const aquariusData = await aquariusResponse.json();
-                    
-                    // Base NFT info - preserve transfers from original token data
-                    const baseNftInfo = {
-                        ...nft,  // This includes the transfers array
-                        nftAddress: nftAddress,
-                        did: did,
-                        currentBalance: ethers.utils.formatUnits(nft.balance, nft.decimals),
-                        accessType: 'dispenser',
-                        status: 'active',
-                        datatokenAddress: datatokenAddress
-                    };
-
-                    // If we have Aquarius data, enhance the NFT info while preserving transfers
-                    if (aquariusData && !aquariusData.error) {
-                        return {
-                            ...baseNftInfo,  // This preserves the transfers array
-                            name: aquariusData.metadata.name,
-                            symbol: aquariusData.metadata.symbol,
-                            description: aquariusData.metadata.description,
-                            author: aquariusData.metadata.author,
-                            created: aquariusData.metadata.created,
-                            updated: aquariusData.metadata.updated,
-                            owner: aquariusData.nft.owner,
-                            previewImageUrl: Array.isArray(aquariusData.metadata.links) && aquariusData.metadata.links.length > 0 
-                                ? aquariusData.metadata.links[0] 
-                                : null,
-                            tags: aquariusData.metadata.tags,
-                            additionalInformation: aquariusData.metadata.additionalInformation
-                        };
-                    }
-
-                    // If no Aquarius data, return the base NFT info (which includes transfers)
-                    console.log(`Using basic token data for NFT ${nft.address}`);
-                    return baseNftInfo;
-
-                } catch (error) {
-                    console.error(`Error fetching NFT info for ${nft.address}:`, error);
-                    // Still return the token as an NFT even if there's an error, preserving transfers
-                    return {
-                        ...nft,  // This preserves the transfers array
-                        nftAddress: nft.erc721Address,
-                        did: calculateDID(nft.erc721Address, chainId),
-                        currentBalance: ethers.utils.formatUnits(nft.balance, nft.decimals),
-                        accessType: 'dispenser',
-                        status: 'active'
-                    };
+        // Prepare batch request to Aquarius
+        const dids = tokenResult.tokens.map(nft => calculateDID(nft.erc721Address, chainId));
+        
+        // Fetch all metadata in parallel with a concurrency limit
+        const BATCH_SIZE = 5;
+        const aquariusData = new Map();
+        
+        for (let i = 0; i < dids.length; i += BATCH_SIZE) {
+            const batch = dids.slice(i, i + BATCH_SIZE);
+            const responses = await Promise.all(
+                batch.map(did => 
+                    fetch(aquariusBaseUrl + did)
+                        .then(res => res.json())
+                        .catch(() => null)
+                )
+            );
+            
+            responses.forEach((data, index) => {
+                if (data && !data.error) {
+                    aquariusData.set(batch[index], data);
                 }
-            })
-        );
+            });
+        }
 
-        // Debug log to check NFT info
-        console.log('Processed NFT info:', nftInfo.map(nft => ({
-            address: nft.address,
-            balance: nft.currentBalance,
-            transfersCount: nft.transfers ? nft.transfers.length : 0
-        })));
+        // Process NFT info using the cached Aquarius data
+        const nftInfo = tokenResult.tokens.map(nft => {
+            const did = calculateDID(nft.erc721Address, chainId);
+            const aquariusMetadata = aquariusData.get(did);
 
-        // Show all NFTs that either:
-        // 1. Have a balance > 0 (unused datatokens)
-        // 2. Have transfers > 0 (spent datatokens)
+            // Base NFT info
+            const baseNftInfo = {
+                ...nft,
+                nftAddress: nft.erc721Address,
+                did,
+                currentBalance: ethers.utils.formatUnits(nft.balance, nft.decimals),
+                accessType: 'dispenser',
+                status: 'active',
+                datatokenAddress: aquariusMetadata?.services?.[0]?.datatokenAddress || nft.datatokenAddress
+            };
+
+            // Return enhanced info if available, otherwise return base info
+            return aquariusMetadata ? {
+                ...baseNftInfo,
+                name: aquariusMetadata.metadata.name,
+                symbol: aquariusMetadata.metadata.symbol,
+                description: aquariusMetadata.metadata.description,
+                author: aquariusMetadata.metadata.author,
+                created: aquariusMetadata.metadata.created,
+                updated: aquariusMetadata.metadata.updated,
+                owner: aquariusMetadata.nft.owner,
+                previewImageUrl: Array.isArray(aquariusMetadata.metadata.links) ? 
+                    aquariusMetadata.metadata.links[0] || null : null,
+                tags: aquariusMetadata.metadata.tags,
+                additionalInformation: aquariusMetadata.metadata.additionalInformation,
+                datatokenAddress: aquariusMetadata.services[0]?.datatokenAddress || nft.datatokenAddress
+            } : baseNftInfo;
+        });
+
+        // Filter accessible NFTs (moved filtering logic to a separate function for clarity)
         const accessibleNfts = nftInfo.filter(nft => {
             const hasBalance = parseFloat(nft.currentBalance) > 0;
-            const hasTransfers = nft.transfers && nft.transfers.length > 0;
-            const isAccessible = hasBalance || hasTransfers;
-            
-            // Debug log for filtering decision
-            console.log(`NFT ${nft.address} - Balance: ${nft.currentBalance}, Transfers: ${nft.transfers ? nft.transfers.length : 0}, Accessible: ${isAccessible}`);
-            
-            return isAccessible;
+            const hasTransfers = nft.transfers?.length > 0;
+            return hasBalance || hasTransfers;
         });
 
         res.json({
             success: true,
-            accessibleNfts: accessibleNfts,
+            accessibleNfts,
             message: `Found ${accessibleNfts.length} accessible NFTs`
         });
 
@@ -128,6 +117,9 @@ router.get('/user-assets/:address/:chainId', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
+
+
 
 // NFT creation endpoint
 router.post('/create-and-publish-nft', async (req, res) => {
@@ -369,7 +361,7 @@ router.post('/prepare-nft-delete', async (req, res) => {
         const oceanConfig = await initializeOcean();
         const provider = new ethers.providers.JsonRpcProvider(oceanConfig.nodeUri);
         
-        // Fetch current DDO from Aquarius to maintain consistency
+        // Fetch current DDO from Aquarius
         const did = calculateDID(nftAddress, oceanConfig.chainId);
         const aquarius = new Aquarius(oceanConfig.metadataCacheUri);
         const currentDDO = await aquarius.resolve(did);
@@ -378,10 +370,17 @@ router.post('/prepare-nft-delete', async (req, res) => {
             throw new Error('Could not fetch current DDO from Aquarius');
         }
 
-        // Mark the DDO as deleted
-        currentDDO.metadata.status = 'deleted';
-        currentDDO.metadata.state = 3;  // Add explicit state
+        // Update DDO metadata
+        currentDDO.metadata.status = 'revoked';
+        currentDDO.metadata.state = 3; // Revoked by publisher
+        currentDDO.metadata.updated = new Date().toISOString();
         
+        // Add revocation info
+        currentDDO.metadata.revocation = {
+            reason: 'Asset deleted by publisher',
+            date: new Date().toISOString()
+        };
+
         // Encrypt the updated DDO
         const encryptedDDO = await ProviderInstance.encrypt(
             currentDDO,
@@ -389,19 +388,26 @@ router.post('/prepare-nft-delete', async (req, res) => {
             oceanConfig.providerUri
         );
 
-        // Calculate metadata hash from the original DDO
-        const metadataHash = getHash(JSON.stringify(currentDDO));
-        
-        // Create the transaction data for setMetaData
+        // Convert encrypted DDO to hex string if it isn't already
+        const encryptedDDOHex = ethers.utils.isHexString(encryptedDDO) 
+            ? encryptedDDO 
+            : ethers.utils.hexlify(ethers.utils.toUtf8Bytes(JSON.stringify(encryptedDDO)));
+
+        // Calculate metadata hash
+        const metadataHash = ethers.utils.keccak256(
+            ethers.utils.toUtf8Bytes(JSON.stringify(currentDDO))
+        );
+
+        // Prepare transaction data using NFT ABI
         const nftInterface = new ethers.utils.Interface(nftAbi);
         const txData = nftInterface.encodeFunctionData("setMetaData", [
-            3,                          // _metaDataState (0 for deletion)
-            "https://v4.provider.oceanprotocol.com",    // _metaDataDecryptorUrl
-            "0x123",                    // _metaDataDecryptorAddress (matching working example)
-            '0x02',                     // flags
-            encryptedDDO,              // encrypted DDO data
-            `0x${metadataHash}`,       // _metaDataHash
-            []                         // additionalParams
+            3,                                    // _metaDataState (3 for revoked)
+            oceanConfig.providerUri || '',        // _metaDataDecryptorUrl
+            oceanConfig.providerAddress || '0x0', // _metaDataDecryptorAddress
+            '0x02',                              // flags (unchanged)
+            encryptedDDOHex,                     // encrypted DDO data
+            metadataHash,                        // _metaDataHash
+            []                                   // additionalParams (empty array for basic revocation)
         ]);
 
         // Estimate gas
@@ -422,11 +428,17 @@ router.post('/prepare-nft-delete', async (req, res) => {
                 gasLimit: gasLimitHex
             }
         });
+
     } catch (error) {
         console.error('Error preparing NFT deletion:', error);
-        res.status(500).json({ success: false, error: error.message });
+        res.status(500).json({ 
+            success: false, 
+            error: error.message,
+            details: error.stack
+        });
     }
 });
+
 
 
 
@@ -454,7 +466,34 @@ router.post('/consume-asset', async (req, res) => {
             throw new Error('No download service found for this asset');
         }
 
-        // Check datatoken balance in dispenser first
+        // Check if user has already purchased this datatoken
+        const hasPurchased = await hasUserPurchased(userAddress, datatokenAddress, chainId);
+        console.log('[DEBUG] Purchase check:', { userAddress, datatokenAddress, hasPurchased });
+
+        if (hasPurchased) {
+            // Get the most recent order tx for this datatoken
+            const orders = await getUserOrders(userAddress, chainId);
+            const matchingOrder = orders.find(order => 
+                order.datatoken.address.toLowerCase() === datatokenAddress.toLowerCase()
+            );
+        
+            return res.json({
+                success: true,
+                did,
+                serviceId: downloadService.id,
+                serviceIndex: downloadService.index || 0,
+                transactions: [], // No transactions needed
+                providerUri: oceanConfig.providerUri,
+                hasValidOrder: true,
+                orderTxId: matchingOrder.tx, // Include the transaction ID from subgraph
+                downloadService: {
+                    type: downloadService.type,
+                    fileIndex: 0
+                }
+            });
+        }
+
+        // Check datatoken balances
         const datatokenAbi = [
             'function balanceOf(address account) view returns (uint256)',
             'function mint(address account, uint256 amount)',
@@ -467,11 +506,17 @@ router.post('/consume-asset', async (req, res) => {
             provider
         );
 
-        const dispenserBalance = await datatokenContract.balanceOf(oceanConfig.dispenserAddress);
-        console.log('[DEBUG] Dispenser balance:', dispenserBalance.toString());
+        // Check both dispenser and user balance in parallel
+        const [dispenserBalance, userBalance] = await Promise.all([
+            datatokenContract.balanceOf(oceanConfig.dispenserAddress),
+            datatokenContract.balanceOf(userAddress)
+        ]);
 
-        // If dispenser needs tokens, add mint transaction first
-        if (dispenserBalance.lt(ethers.utils.parseEther('1'))) {
+        console.log('[DEBUG] Dispenser balance:', dispenserBalance.toString());
+        console.log('[DEBUG] User balance:', userBalance.toString());
+
+        // If neither dispenser nor user has tokens, we need to mint
+        if (dispenserBalance.lt(ethers.utils.parseEther('1')) && userBalance.lt(ethers.utils.parseEther('1'))) {
             console.log('[DEBUG] Adding mint transaction for dispenser');
             const mintTx = {
                 message: 'Minting tokens to dispenser...',
@@ -479,7 +524,7 @@ router.post('/consume-asset', async (req, res) => {
                     to: datatokenAddress,
                     data: datatokenContract.interface.encodeFunctionData('mint', [
                         oceanConfig.dispenserAddress,
-                        ethers.utils.parseEther('100') // Mint 100 tokens
+                        ethers.utils.parseEther('1')
                     ]),
                     gasLimit: '300000'
                 }
@@ -487,26 +532,28 @@ router.post('/consume-asset', async (req, res) => {
             transactions.push(mintTx);
         }
 
-        // Add dispense transaction
-        const dispenserContract = new ethers.Contract(
-            oceanConfig.dispenserAddress,
-            ['function dispense(address datatoken, uint256 amount, address destination)'],
-            provider
-        );
+        // Only add dispense transaction if user needs tokens
+        if (userBalance.lt(ethers.utils.parseEther('1'))) {
+            const dispenserContract = new ethers.Contract(
+                oceanConfig.dispenserAddress,
+                ['function dispense(address datatoken, uint256 amount, address destination)'],
+                provider
+            );
 
-        const dispenseTx = {
-            message: 'Getting tokens from dispenser...',
-            data: {
-                to: oceanConfig.dispenserAddress,
-                data: dispenserContract.interface.encodeFunctionData('dispense', [
-                    datatokenAddress,
-                    ethers.utils.parseEther('1'),
-                    userAddress
-                ]),
-                gasLimit: '300000'
-            }
-        };
-        transactions.push(dispenseTx);
+            const dispenseTx = {
+                message: 'Getting tokens from dispenser...',
+                data: {
+                    to: oceanConfig.dispenserAddress,
+                    data: dispenserContract.interface.encodeFunctionData('dispense', [
+                        datatokenAddress,
+                        ethers.utils.parseEther('1'),
+                        userAddress
+                    ]),
+                    gasLimit: '300000'
+                }
+            };
+            transactions.push(dispenseTx);
+        }
 
         // Initialize provider with correct service details
         const initializeData = await ProviderInstance.initialize(
@@ -551,20 +598,45 @@ router.post('/consume-asset', async (req, res) => {
         };
         transactions.push(orderTx);
 
+        // Estimate gas for all transactions
+        const gasEstimates = await Promise.all(
+            transactions.map(tx => 
+                provider.estimateGas({
+                    to: tx.data.to,
+                    data: tx.data.data,
+                    from: userAddress
+                }).catch(() => ethers.BigNumber.from(tx.data.gasLimit))
+            )
+        );
+
+        // Update gas limits with estimates plus 20% buffer
+        transactions.forEach((tx, index) => {
+            tx.data.gasLimit = '0x' + gasEstimates[index]
+                .mul(12).div(10)  // Add 20% buffer
+                .toHexString().slice(2);
+        });
+
         res.json({
             success: true,
             did,
             serviceId: downloadService.id,
             serviceIndex: downloadService.index || 0,
             transactions,
-            providerUri: oceanConfig.providerUri
+            providerUri: oceanConfig.providerUri,
+            hasTokens: !userBalance.isZero(),
+            downloadService: {
+                type: downloadService.type,
+                fileIndex: 0,
+                // Add any other relevant download service info
+            }
         });
 
     } catch (error) {
         console.error('Error preparing consume transaction:', error);
         res.status(500).json({ 
             success: false, 
-            error: error.message 
+            error: error.message,
+            details: error.stack
         });
     }
 });
@@ -615,7 +687,3 @@ router.post('/get-download-url', async (req, res) => {
 
 
 module.exports = router;
-
-
-
-

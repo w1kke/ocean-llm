@@ -1,4 +1,4 @@
-const { NftFactory, ConfigHelper, ProviderInstance, Aquarius, getHash, ZERO_ADDRESS } = require('@oceanprotocol/lib');
+const { NftFactory, ConfigHelper, ProviderInstance, Aquarius, getHash, ZERO_ADDRESS} = require('@oceanprotocol/lib');
 const ethers = require('ethers');
 const { debug } = require('./config');
 

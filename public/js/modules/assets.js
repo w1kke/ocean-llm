@@ -83,7 +83,6 @@ async function fetchAndDisplayAssets() {
     }
 }
 
-
 async function openAsset(nftAddress, datatokenAddress) {
     try {
         const statusDiv = document.createElement('div');
@@ -107,6 +106,7 @@ async function openAsset(nftAddress, datatokenAddress) {
 
         const chainId = await window.web3.eth.getChainId();
 
+
         // Step 1: Get consume transaction data
         window.updateTransactionStatus('openAssetStatus', 'pending', 'Preparing consume transaction...');
         const consumeResponse = await fetch('/api/consume-asset', {
@@ -127,33 +127,40 @@ async function openAsset(nftAddress, datatokenAddress) {
 
         let orderTxId;
 
-        // Execute transactions in sequence and wait for confirmations
-        for (const tx of consumeData.transactions) {
-            window.updateTransactionStatus('openAssetStatus', 'pending', tx.message);
+        // Check if user has already purchased
+        if (consumeData.hasValidOrder && consumeData.orderTxId) {
+            console.log('Using existing order:', consumeData.orderTxId);
+            orderTxId = consumeData.orderTxId;
+            window.updateTransactionStatus('openAssetStatus', 'pending', 'Using existing access...');
+        } else {
+            // Execute transactions in sequence for new purchase
+            for (const tx of consumeData.transactions) {
+                window.updateTransactionStatus('openAssetStatus', 'pending', tx.message);
             
-            // Send transaction
-            const txHash = await window.ethereum.request({
-                method: 'eth_sendTransaction',
-                params: [{
-                    ...tx.data,
-                    from: window.userAddress
-                }]
-            });
-
-            // Wait for transaction confirmation
-            console.log(`Waiting for transaction ${txHash} to be mined...`);
-            const receipt = await window.waitForTransaction(txHash);
-            console.log(`Transaction confirmed:`, receipt);
-
-            // Check if transaction was successful
-            if (!receipt.status) {
-                throw new Error(`Transaction failed: ${txHash}`);
-            }
-
-            // Since we know the order tx is always the last one
-            if (tx === consumeData.transactions[consumeData.transactions.length - 1]) {
-                orderTxId = receipt.transactionHash;
-                console.log(`Order transaction ID: ${orderTxId}`);
+                // Send transaction
+                const txHash = await window.ethereum.request({
+                    method: 'eth_sendTransaction',
+                    params: [{
+                        ...tx.data,
+                        from: window.userAddress
+                    }]
+                });
+            
+                // Wait for transaction confirmation
+                console.log(`Waiting for transaction ${txHash} to be mined...`);
+                const receipt = await window.waitForTransaction(txHash, 'tx1Status'); 
+                console.log(`Transaction confirmed:`, receipt);
+            
+                // Check if transaction was successful
+                if (!receipt.status) {
+                    throw new Error(`Transaction failed: ${txHash}`);
+                }
+            
+                // Since we know the order tx is always the last one
+                if (tx === consumeData.transactions[consumeData.transactions.length - 1]) {
+                    orderTxId = receipt.transactionHash;
+                    console.log(`Order transaction ID: ${orderTxId}`);
+                }
             }
         }
 
@@ -183,7 +190,7 @@ async function openAsset(nftAddress, datatokenAddress) {
         // Create message to sign (did + nonce)
         const message = downloadData.did + downloadData.nonce;
         console.log('Message to sign:', message);
-        
+
         // Get message hash using web3
         const messageHash = window.web3.utils.soliditySha3(
             { t: 'bytes', v: window.web3.utils.utf8ToHex(message) }
@@ -224,33 +231,6 @@ async function openAsset(nftAddress, datatokenAddress) {
             statusElement.textContent = 'Error: ' + error.message;
         }
         setTimeout(() => document.querySelector('.status-overlay')?.remove(), 3000);
-    }
-}
-
-// Helper function to wait for transaction confirmation
-async function waitForTransaction(txHash) {
-    let receipt = null;
-    while (!receipt) {
-        try {
-            receipt = await window.web3.eth.getTransactionReceipt(txHash);
-            if (!receipt) {
-                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before checking again
-            }
-        } catch (error) {
-            console.error('Error checking transaction:', error);
-            throw error;
-        }
-    }
-    return receipt;
-}
-
-
-// Helper function to update transaction status
-function updateTransactionStatus(statusId, state, message) {
-    const statusElement = document.querySelector(`#${statusId} .tx-state`);
-    if (statusElement) {
-        statusElement.className = `tx-state ${state}`;
-        statusElement.textContent = message;
     }
 }
 
@@ -414,7 +394,7 @@ function closeDeleteDialog() {
 
 async function deleteNFT(nftAddress) {
     try {
-        // Show status in the dialog
+        // Create status UI
         const dialogBody = document.querySelector('.delete-dialog .window-body');
         const statusDiv = document.createElement('div');
         statusDiv.className = 'transaction-status';
@@ -426,12 +406,10 @@ async function deleteNFT(nftAddress) {
         `;
         dialogBody.appendChild(statusDiv);
 
-        // Get the transaction data from the server
+        // Step 1: Get transaction data from backend
         const response = await fetch('/api/prepare-nft-delete', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 nftAddress,
                 userAddress: window.userAddress
@@ -439,32 +417,35 @@ async function deleteNFT(nftAddress) {
         });
 
         const data = await response.json();
-        if (!data.success) throw new Error(data.error);
+        if (!data.success) {
+            throw new Error(data.error || 'Failed to prepare deletion');
+        }
 
-        // Update status
+        // Step 2: Update UI to waiting state
         window.updateTransactionStatus('deleteStatus', 'pending', 'Waiting for approval...');
 
-        // Send the transaction
+        // Step 3: Send transaction via Web3
         const tx = await window.web3.eth.sendTransaction({
-            ...data.transaction,
+            ...data.transaction,  // Contains to, data, and gasLimit
             from: window.userAddress
         });
 
-        // Wait for transaction confirmation
+        // Step 4: Wait for confirmation
         await window.waitForTransaction(tx.transactionHash, 'deleteStatus');
-
-        // Update status and refresh assets
-        window.updateTransactionStatus('deleteStatus', 'success', 'NFT deleted successfully!');
+        
+        // Step 5: Success handling
+        window.updateTransactionStatus('deleteStatus', 'success', 'NFT revoked successfully!');
         await new Promise(resolve => setTimeout(resolve, 2000));
         await window.fetchAndDisplayAssets();
         closeDeleteDialog();
 
     } catch (error) {
+        // Error handling
         console.error('Error deleting NFT:', error);
-        window.updateTransactionStatus('deleteStatus', 'error', 'Error: ' + error.message);
+        window.updateTransactionStatus('deleteStatus', 'error',
+            `Error: ${error.message || 'Unknown error occurred'}`);
     }
 }
-
 
 // Export functions and variables
 window.assetsUpdateInterval = assetsUpdateInterval;
@@ -480,3 +461,4 @@ window.deleteNFT = deleteNFT;
 window.openAsset = openAsset;
 window.waitForTransaction = waitForTransaction;
 window.updateTransactionStatus = updateTransactionStatus;
+
